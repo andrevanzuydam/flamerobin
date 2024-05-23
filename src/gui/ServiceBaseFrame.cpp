@@ -21,7 +21,7 @@
   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-// For compilers that support precompilation, includes "wx/wx.h".
+// For compilers that support pre-compilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
 // for all others, include the necessary headers (this file is usually all you
@@ -319,6 +319,7 @@ void* ServiceThread::Entry()
             if (TestDestroy())
             {
                 now = wxDateTime::Now();
+
                 msg.Printf(_("Database restore canceled %s"),
                     now.FormatTime().c_str());
                 logImportant(msg);

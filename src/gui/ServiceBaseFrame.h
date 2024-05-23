@@ -125,8 +125,8 @@ public:
         wxString charset
     );
 
-    virtual void* Entry();
-    virtual void OnExit();
+    void* Entry() override;
+    void OnExit() override;
 
 protected:
         virtual void Execute(IBPP::Service ) = 0;

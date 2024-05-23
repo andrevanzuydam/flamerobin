@@ -199,11 +199,12 @@ void BackupRestoreBaseFrame::createControls()
     button_browse = new wxButton(panel_controls, ID_button_browse, _("..."),
         wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
 
-    checkbox_metadata = new wxCheckBox(panel_controls, wxID_ANY,
-        _("Only metadata (FB2.5+)"));
-
     checkbox_showlog = new wxCheckBox(panel_controls, ID_checkbox_showlog,
         _("Show complete log"));
+    checkbox_showlog->SetValue(true);
+
+    checkbox_metadata = new wxCheckBox(panel_controls, wxID_ANY,
+                                       _("Only metadata (FB2.5+)"));
 
     spinctrl_showlogInterval = new wxSpinCtrl(panel_controls, ID_spinctrl_showlogInterval);
     spinctrl_showlogInterval->SetRange(0, 32767);
@@ -245,14 +246,14 @@ void BackupRestoreBaseFrame::layoutControls()
 
 
     {
-        wxGridSizer* gsizer = new wxGridSizer(1, 4,
+        auto* gsizer = new wxGridSizer(1, 4,
             styleguide().getCheckboxSpacing(),
             styleguide().getUnrelatedControlMargin(wxHORIZONTAL));
 
         gsizer->Add(checkbox_metadata, 0, wxEXPAND);
         gsizer->Add(checkbox_showlog, 0, wxEXPAND);
         {
-            wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
+            auto* sizer = new wxBoxSizer(wxHORIZONTAL);
             sizer->Add(new wxStaticText(panel_controls, wxID_ANY,
                 _("Verbose interval (FB3.0+)")), 0, wxALIGN_CENTER_VERTICAL);
             sizer->Add(styleguide().getControlLabelMargin(), 0);
@@ -261,7 +262,7 @@ void BackupRestoreBaseFrame::layoutControls()
             gsizer->Add(sizer);
         }
         {
-            wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
+            auto* sizer = new wxBoxSizer(wxHORIZONTAL);
             sizer->Add(new wxStaticText(panel_controls, wxID_ANY,
                 _("Parallel (FB3.0+)")), 0, wxALIGN_CENTER_VERTICAL);
             sizer->Add(styleguide().getControlLabelMargin(), 0);

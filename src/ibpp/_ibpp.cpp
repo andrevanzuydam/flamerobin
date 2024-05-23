@@ -44,7 +44,7 @@
 #include <stdlib.h>
 
 //empty string terminated list of Firebird SO libraries to try in turn
-static const char* fblibs[] = {"libfbembed.so.2.5","libfbembed.so.2.1","libfbclient.so.2",""};
+static const char* fblibs[] = {"libfbclient.dylib", "libfbembed.so.2.5","libfbembed.so.2.1","libfbclient.so.2",""};
 
 #endif
 

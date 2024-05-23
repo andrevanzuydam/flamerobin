@@ -37,7 +37,6 @@
 #include "metadata/MetadataItemURIHandlerHelper.h"
 
 class DBHTreeControl;
-class LabelPanel;
 class TemplateProcessor;
 class wxFileName;
 
@@ -74,7 +73,6 @@ public:
     void OnMenuGenerateData(wxCommandEvent& event);
     void OnMenuBackup(wxCommandEvent& event);
     void OnMenuExecuteStatements(wxCommandEvent& event);
-    void OnMenuInsert(wxCommandEvent& event);
     void OnMenuBrowseData(wxCommandEvent& event);
     void OnMenuRestore(wxCommandEvent& event);
     void OnMenuShowAllGeneratorValues(wxCommandEvent& event);
@@ -90,7 +88,6 @@ public:
     void OnMenuDropObject(wxCommandEvent& event);
     void OnMenuAlterObject(wxCommandEvent& event);
     void OnMenRebuildObject(wxCommandEvent& event);
-    void OnMenuCreateTriggerForTable(wxCommandEvent& event);
     void OnMenuGenerateCode(wxCommandEvent& event);
     void OnMenuExecuteProcedure(wxCommandEvent& event);
     void OnMenuDisconnect(wxCommandEvent& event);
@@ -162,12 +159,12 @@ public:
         const wxSize& size = wxDefaultSize, long style = wxDEFAULT_FRAME_STYLE);
 
     bool openUnregisteredDatabase(const wxString& dbpath);
-    bool handleURI(URI& uri);
+    bool handleURI(URI& uri) override;
 private:
     RootPtr rootM;
 
-    virtual bool doCanClose();
-    virtual void doBeforeDestroy();
+    bool doCanClose() override;
+    void doBeforeDestroy() override;
 
     bool getAutoConnectDatabase();
     bool tryAutoConnectDatabase();
@@ -197,20 +194,19 @@ private:
         MetadataItem* item, DatabasePtr database);
 protected:
     DBHTreeControl* treeMainM;
-    wxMenuBar* menuBarM;
-    wxMenu* windowMenuM;        // dynamic menu
-    wxMenu* objectMenuM;
-    wxMenu* databaseMenuM;
+    wxMenuBar* menuBarM{};// dynamic menu
+    wxMenu* objectMenuM{};
+    wxMenu* databaseMenuM{};
     wxPanel* mainPanelM;
     wxPanel* searchPanelM;
-    wxBoxSizer* searchPanelSizerM;
+    wxBoxSizer* searchPanelSizerM{};
     wxComboBox* searchBoxM;
     wxBitmapButton* button_prev;
     wxBitmapButton* button_next;
     wxBitmapButton* button_advanced;
 
-    virtual const wxString getName() const;
-    virtual const wxRect getDefaultRect() const;
+    const wxString getName() const override;
+    const wxRect getDefaultRect() const override;
     DECLARE_EVENT_TABLE()
 };
 

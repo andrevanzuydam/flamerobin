@@ -99,7 +99,7 @@ void BackupFrame::layoutControls()
     
     BackupRestoreBaseFrame::layoutControls();
 
-    wxGridSizer* sizerChecks = new wxGridSizer(3, 3,
+    auto* sizerChecks = new wxGridSizer(3, 3,
         styleguide().getCheckboxSpacing(),
         styleguide().getUnrelatedControlMargin(wxHORIZONTAL));
     sizerChecks->Add(checkbox_checksum, 0, wxEXPAND);
@@ -114,7 +114,7 @@ void BackupFrame::layoutControls()
 
 
 
-    wxBoxSizer* sizerPanelV = new wxBoxSizer(wxVERTICAL);
+    auto* sizerPanelV = new wxBoxSizer(wxVERTICAL);
     sizerPanelV->Add(0, styleguide().getFrameMargin(wxTOP));
     sizerPanelV->Add(sizerFilename, 0, wxEXPAND);
     sizerPanelV->Add(0, styleguide().getRelatedControlMargin(wxVERTICAL));
@@ -125,13 +125,13 @@ void BackupFrame::layoutControls()
     sizerPanelV->Add(sizerButtons, 0, wxEXPAND);
     sizerPanelV->Add(0, styleguide().getRelatedControlMargin(wxVERTICAL));
 
-    wxBoxSizer* sizerPanelH = new wxBoxSizer(wxHORIZONTAL);
+    auto* sizerPanelH = new wxBoxSizer(wxHORIZONTAL);
     sizerPanelH->Add(styleguide().getFrameMargin(wxLEFT), 0);
     sizerPanelH->Add(sizerPanelV, 1, wxEXPAND);
     sizerPanelH->Add(styleguide().getFrameMargin(wxRIGHT), 0);
     panel_controls->SetSizerAndFit(sizerPanelH);
 
-    wxBoxSizer* sizerMain = new wxBoxSizer(wxVERTICAL);
+    auto* sizerMain = new wxBoxSizer(wxVERTICAL);
     sizerMain->Add(panel_controls, 0, wxEXPAND);
     sizerMain->Add(text_ctrl_log, 1, wxEXPAND);
 

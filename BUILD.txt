@@ -146,6 +146,9 @@ build for 'release':
 -- Mac OS --
 ------------
 
-TODO: We currently have no MacOS devs. The UNIX build above may work, with some
-      tweaks.
+Add dependencies for compilation, also requires firebird install for relevant MAC OS, you may need to compile Firebird for ARM if using M processor
 
+brew install wxwidgets
+brew install boost
+
+CLion editor from InteliJ seems to work out of the box for compiling

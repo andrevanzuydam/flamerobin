@@ -79,7 +79,7 @@
 #include "metadata/view.h"
 
 
-bool checkValidDatabase(DatabasePtr database)
+bool checkValidDatabase(const DatabasePtr& database)
 {
     if (database)
         return true;
@@ -88,7 +88,7 @@ bool checkValidDatabase(DatabasePtr database)
     return false;
 }
 
-bool checkValidServer(ServerPtr server)
+bool checkValidServer(const ServerPtr& server)
 {
     if (server)
         return true;
@@ -101,19 +101,19 @@ DatabasePtr getDatabase(MetadataItem* mi)
 {
     if (mi)
         return mi->getDatabase();
-    return DatabasePtr();
+    return {};
 }
 
 ServerPtr getServer(MetadataItem* mi)
 {
     if (mi)
     {
-        if (Server* s = dynamic_cast<Server*>(mi))
+        if (auto* s = dynamic_cast<Server*>(mi))
             return s->shared_from_this();
         if (DatabasePtr db = mi->getDatabase())
             return db->getServer();
     }
-    return ServerPtr();
+    return {};
 }
 
 //! helper class to enable drag and drop of database files to the tree ctrl
@@ -123,8 +123,8 @@ class DnDDatabaseFile : public wxFileDropTarget
 private:
     MainFrame* frameM;
 public:
-    DnDDatabaseFile(MainFrame* frame) { frameM = frame; }
-    virtual bool OnDropFiles(wxCoord, wxCoord, const wxArrayString& filenames)
+    explicit DnDDatabaseFile(MainFrame* frame) { frameM = frame; }
+    bool OnDropFiles(wxCoord, wxCoord, const wxArrayString& filenames) override
     {
         for (size_t i = 0; i < filenames.GetCount(); i++)
             frameM->openUnregisteredDatabase(filenames[i]);

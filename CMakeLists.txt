@@ -434,12 +434,9 @@ endif (UNIX AND NOT APPLE)
 
 if(APPLE)
 	# MacOS specific stuff
-	# TODO: Untested, if any Mac devs want to check, please get in touch
-	message(WARNING "MacOS build is untested.\n"
-	                "Please get in contact to tell us of your results.")
 	add_definitions(-DIBPP_DARWIN)
 	list(APPEND FR_LIBS -lfbclient)
-        list(APPEND FR_LIBS -L/Library/Frameworks/Firebird.framework/Versions/Current/Libraries)
+        list(APPEND FR_LIBS -L${CMAKE_SOURCE_DIR}/firebird-libs)
         
     list(APPEND SOURCE_LIST
         ${SOURCEDIR}/gui/mac/StyleGuideMAC.cpp
@@ -473,6 +470,7 @@ if(APPLE)
     endfunction()
 
     # Add resources
+	add_resources(FIREBIRD_LIBS ${CMAKE_SOURCE_DIR}/firebird-libs MacOS *)
     add_resources(HTML_TEMPLATES ${CMAKE_SOURCE_DIR}/html-templates SharedSupport/html-templates *)
     add_resources(CONF_DEFS ${CMAKE_SOURCE_DIR}/conf-defs SharedSupport/conf-defs *)
     add_resources(DOCS ${CMAKE_SOURCE_DIR}/docs SharedSupport/docs *)
@@ -482,6 +480,7 @@ if(APPLE)
     add_resources(XML_STYLES ${CMAKE_SOURCE_DIR}/xml-styles SharedSupport/xml-styles *)
 
     set(RESOURCE_FILES_MAC
+			${FIREBIRD_LIBS}
             ${HTML_TEMPLATES}
             ${CONF_DEFS}
             ${DOCS}
