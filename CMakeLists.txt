@@ -435,7 +435,6 @@ endif (UNIX AND NOT APPLE)
 if(APPLE)
 	# MacOS specific stuff
 	add_definitions(-DIBPP_DARWIN)
-	add_definitions(-DCMAKE_MACOSX_RPATH=ON)
 	list(APPEND FR_LIBS -lfbclient)
         list(APPEND FR_LIBS -L${CMAKE_SOURCE_DIR}/firebird-libs)
         

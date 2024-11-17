@@ -31,38 +31,48 @@
 
 class StartupThread;
 
-class StartupFrame: public ShutdownStartupBaseFrame {
+class StartupFrame : public ShutdownStartupBaseFrame {
     friend class StartupThread;
+
 private:
 
 
     virtual void createControls();
+
     virtual void layoutControls();
+
     virtual void updateControls();
 
     static wxString getFrameId(DatabasePtr db);
-protected:
-    virtual void doReadConfigSettings(const wxString& prefix);
-    virtual void doWriteConfigSettings(const wxString& prefix) const;
-    virtual const wxString getName() const;
-public:
-    StartupFrame(wxWindow* parent, DatabasePtr db);
 
-    static StartupFrame* findFrameFor(DatabasePtr db);
+protected:
+    virtual void doReadConfigSettings(const wxString &prefix);
+
+    virtual void doWriteConfigSettings(const wxString &prefix) const;
+
+    virtual const wxString getName() const;
+
+public:
+    StartupFrame(wxWindow *parent, DatabasePtr db);
+
+    static StartupFrame *findFrameFor(DatabasePtr db);
+
 private:
     // event handling
-    void OnStartButtonClick(wxCommandEvent& event);
+    void OnStartButtonClick(wxCommandEvent &event);
 
-    DECLARE_EVENT_TABLE()
+DECLARE_EVENT_TABLE()
 };
 
 
-class StartupThread : public ShutdownStartupThread
-{
+class StartupThread : public ShutdownStartupThread {
 public:
-    StartupThread(StartupFrame* frame, wxString server,
-        wxString username, wxString password, wxString rolename, wxString charset,
-        wxString dbfilename, IBPP::DSM flags);
+    StartupThread(StartupFrame *frame,
+                  wxString action,
+                  wxString server,
+                  wxString username, wxString password, wxString rolename, wxString charset,
+                  wxString dbfilename, IBPP::DSM flags);
+
 protected:
     virtual void Execute(IBPP::Service);
 

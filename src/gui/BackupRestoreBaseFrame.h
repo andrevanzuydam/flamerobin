@@ -115,7 +115,7 @@ private:
 class BackupRestoreThread : public ServiceThread
 {
 public:
-    BackupRestoreThread(BackupRestoreBaseFrame* frame, wxString server,
+    BackupRestoreThread(BackupRestoreBaseFrame* frame, wxString action, wxString server,
         wxString username, wxString password, wxString rolename, wxString charset,
         wxString dbfilename, wxString bkfilename,
         IBPP::BRF flags, int interval, int parallel,

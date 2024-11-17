@@ -47,7 +47,7 @@
 //empty string terminated list of Firebird SO libraries to try in turn
 static const char *fblibs[] = {"libfbclient.dylib", "libfbembed.so.2.5", "libfbembed.so.2.1", "libfbclient.so.2"};
 #if defined(__WXOSX_COCOA__)
-static const char prefix[] = "./lib/";
+static const char prefix[] = "";
 #else
 static const char prefix[] = "";
 #endif
@@ -375,7 +375,7 @@ namespace IBPP {
     bool CheckVersion(uint32_t AppVersion) {
         //(void)gds.Call(); 		// Just call it to trigger the initialization
         return (AppVersion & 0xFFFFFF00) ==
-               (IBPP::Version & 0xFFFFFF00) ? true : false;
+               (IBPP::Version & 0xFFFFFF00);
     }
 
 #ifdef IBPP_WINDOWS

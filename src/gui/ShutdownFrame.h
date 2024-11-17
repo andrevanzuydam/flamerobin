@@ -31,49 +31,60 @@
 
 class ShutdownThread;
 
-class ShutdownFrame: public ShutdownStartupBaseFrame {
+class ShutdownFrame : public ShutdownStartupBaseFrame {
     friend class ShutdownThread;
+
 private:
 
-    wxCheckBox* checkbox_attach;
-    wxCheckBox* checkbox_tran;
-    wxCheckBox* checkbox_force;
+    wxCheckBox *checkbox_attach;
+    wxCheckBox *checkbox_tran;
+    wxCheckBox *checkbox_force;
 
-    wxStaticText* label_timeout;
-    wxSpinCtrl* spinctrl_timeout;
+    wxStaticText *label_timeout;
+    wxSpinCtrl *spinctrl_timeout;
 
     virtual void createControls();
+
     virtual void layoutControls();
+
     virtual void updateControls();
 
     static wxString getFrameId(DatabasePtr db);
-protected:
-    virtual void doReadConfigSettings(const wxString& prefix);
-    virtual void doWriteConfigSettings(const wxString& prefix) const;
-    virtual const wxString getName() const;
-public:
-    ShutdownFrame(wxWindow* parent, DatabasePtr db);
 
-    static ShutdownFrame* findFrameFor(DatabasePtr db);
+protected:
+    virtual void doReadConfigSettings(const wxString &prefix);
+
+    virtual void doWriteConfigSettings(const wxString &prefix) const;
+
+    virtual const wxString getName() const;
+
+public:
+    ShutdownFrame(wxWindow *parent, DatabasePtr db);
+
+    static ShutdownFrame *findFrameFor(DatabasePtr db);
+
 private:
     // event handling
-    void OnStartButtonClick(wxCommandEvent& event);
+    void OnStartButtonClick(wxCommandEvent &event);
 
-    DECLARE_EVENT_TABLE()
+DECLARE_EVENT_TABLE()
 };
 
 
-class ShutdownThread : public ShutdownStartupThread
-{
+class ShutdownThread : public ShutdownStartupThread {
 public:
-    ShutdownThread(ShutdownFrame* frame, wxString server,
-        wxString username, wxString password, wxString rolename, wxString charset,
-        wxString dbfilename, IBPP::DSM flags, int timeout);
+    ShutdownThread(ShutdownFrame *frame,
+                   wxString action,
+                   wxString server,
+                   wxString username, wxString password, wxString rolename, wxString charset,
+                   wxString dbfilename, IBPP::DSM flags, int timeout);
+
 protected:
     virtual void Execute(IBPP::Service);
+
     int timeoutM;
 
 
-
 };
+
 #endif // FR_SHUTDOWNFRAME_H

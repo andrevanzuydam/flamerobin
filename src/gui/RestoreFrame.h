@@ -56,6 +56,7 @@ private:
     virtual void layoutControls();
     virtual void updateControls();
 
+
     static wxString getFrameId(DatabasePtr db);
 protected:
     virtual void doReadConfigSettings(const wxString& prefix);
@@ -77,7 +78,9 @@ private:
 class RestoreThread : public BackupRestoreThread
 {
 public:
-    RestoreThread(RestoreFrame* frame, wxString server,
+    RestoreThread(RestoreFrame* frame,
+        wxString action,
+        wxString server,
         wxString username, wxString password, wxString rolename, wxString charset,
         wxString bkfilename, wxString dbfilename,
         int pagesize, int pagebuffers, IBPP::BRF flags, int interval, int parallel,
