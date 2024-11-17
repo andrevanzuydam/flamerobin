@@ -6,5 +6,5 @@ and include them in the setup if we want.
 
 From the project folder (assumes you have firebird installed here)
 ```bash
-cp /opt/firebird/lib/* ./firebird-libs
+cp /Library/Frameworks/Firebird.framework/Resources/lib/* ./firebird-libs
 ```

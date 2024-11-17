@@ -1789,13 +1789,12 @@ void ExecuteSqlFrame::OnMenuGridInsertRow(wxCommandEvent& WXUNUSED(event))
 
 // this returns an array of row numbers of fully selected rows, or the number
 // of the active row
+// @todo Andre - refactor as the logic here is really bad!
 wxArrayInt getSelectedGridRows(DataGrid* grid)
 {
     wxArrayInt rows;
     if (grid)
     {
-        // add fully selected rows
-        rows = grid->GetSelectedRows();
 
         // add rows in selection blocks that span all columns
         wxGridCellCoordsArray tlCells(grid->GetSelectionBlockTopLeft());
@@ -1815,8 +1814,9 @@ wxArrayInt getSelectedGridRows(DataGrid* grid)
             }
         }
         // add the row of the active cell if nothing else is selected
-        if (!rows.GetCount())
+        if (!rows.GetCount()) {
             rows.Add(grid->GetGridCursorRow());
+        }
     }
     return rows;
 }
@@ -1826,17 +1826,13 @@ void ExecuteSqlFrame::OnMenuGridDeleteRow(wxCommandEvent& WXUNUSED(event))
     if (!grid_data->getDataGridTable() || !grid_data->GetNumberRows())
         return;
 
-    // M.B. when this is enabled the grid behaves strange on GTK2 (wx2.8.6)
-    // when deleting multiple items. I didn't test other platforms
-    // grid_data->BeginBatch();
-
     wxArrayInt rows(getSelectedGridRows(grid_data));
     size_t count = rows.GetCount();
     if (count > 1)
     {
         bool agreed = wxOK == showQuestionDialog(this,
             _("Do you really want to delete multiple rows?"),
-            wxString::Format(_("You have more than one row selected. Are you sure you wish to delete all %d selected rows?"), count),
+            wxString::Format(_("You have more than one row selected. Are you sure you wish to delete all %d selected rows?"), int(count)),
             AdvancedMessageDialogButtonsOkCancel(_("Delete")));
         if (!agreed)
             return;
@@ -1853,7 +1849,6 @@ void ExecuteSqlFrame::OnMenuGridDeleteRow(wxCommandEvent& WXUNUSED(event))
             break;
     }
 
-    // grid_data->EndBatch();   // see comment for BeginBatch above
 }
 
 void ExecuteSqlFrame::OnMenuGridSetFieldToNULL(wxCommandEvent& WXUNUSED(event))

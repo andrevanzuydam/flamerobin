@@ -740,7 +740,9 @@ void MainFrame::doBeforeDestroy()
     wxSafeYield();
     treeMainM->Thaw();
 
+    #if !defined(__WXOSX_COCOA__)
     wxTheClipboard->Flush();
+    #endif
 }
 
 void MainFrame::OnMenuQuit(wxCommandEvent& WXUNUSED(event))

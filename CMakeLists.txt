@@ -443,7 +443,13 @@ if(APPLE)
     )
 
     add_definitions(-DFR_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
- 
+
+	# Assumes you have installed the firebird database engine
+	execute_process(
+		COMMAND "cp /Library/Frameworks/Firebird.framework/Resources/lib/* ${CMAKE_SOURCE_DIR}/firebird-libs"
+		WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+	)
+
     # Create the revision include file
     execute_process(
         COMMAND "${CMAKE_SOURCE_DIR}/update-revision-info.sh"
