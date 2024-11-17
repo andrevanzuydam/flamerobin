@@ -81,7 +81,7 @@ bool Application::OnInit()
     parseCommandLine();
 
 #if defined(__WXOSX_COCOA__)
-    std::locale::global(std::locale(""));
+    std::setlocale(LC_CTYPE, "");
 #endif
 
     // initialize IBPP library - if it fails: exit

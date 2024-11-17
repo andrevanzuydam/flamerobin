@@ -435,6 +435,7 @@ endif (UNIX AND NOT APPLE)
 if(APPLE)
 	# MacOS specific stuff
 	add_definitions(-DIBPP_DARWIN)
+	add_definitions(-DCMAKE_MACOSX_RPATH=ON)
 	list(APPEND FR_LIBS -lfbclient)
         list(APPEND FR_LIBS -L${CMAKE_SOURCE_DIR}/firebird-libs)
         
@@ -470,7 +471,7 @@ if(APPLE)
     endfunction()
 
     # Add resources
-	add_resources(FIREBIRD_LIBS ${CMAKE_SOURCE_DIR}/firebird-libs MacOS *)
+	add_resources(FIREBIRD_LIBS ${CMAKE_SOURCE_DIR}/firebird-libs MacOS/lib *)
     add_resources(HTML_TEMPLATES ${CMAKE_SOURCE_DIR}/html-templates SharedSupport/html-templates *)
     add_resources(CONF_DEFS ${CMAKE_SOURCE_DIR}/conf-defs SharedSupport/conf-defs *)
     add_resources(DOCS ${CMAKE_SOURCE_DIR}/docs SharedSupport/docs *)
