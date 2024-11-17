@@ -266,6 +266,7 @@ void BackupFrame::OnBrowseButtonClick(wxCommandEvent& WXUNUSED(event))
 
 void BackupFrame::OnStartButtonClick(wxCommandEvent& WXUNUSED(event))
 {
+    action = "Backup";
     verboseMsgsM = checkbox_showlog->IsChecked() || spinctrl_showlogInterval->GetValue() > 0;
     clearLog();
 
@@ -317,7 +318,7 @@ void BackupFrame::OnStartButtonClick(wxCommandEvent& WXUNUSED(event))
     if (checkbox_staticpagewrite->IsChecked())
         flags |= (int)IBPP::brstatistics_pagewrites;
 
-    startThread(std::make_unique<BackupThread>(this,
+    startThread(std::make_unique<BackupThread>(this, action,
         server->getConnectionString(), username, password, rolename, charset,
         database->getPath(), text_ctrl_filename->GetValue(),
         (IBPP::BRF)flags, spinctrl_showlogInterval->GetValue(), spinctrl_parallelworkers->GetValue(),
@@ -330,13 +331,14 @@ void BackupFrame::OnStartButtonClick(wxCommandEvent& WXUNUSED(event))
 }
 
 BackupThread::BackupThread(BackupFrame* frame,
+    wxString action,
     wxString server, wxString username, wxString password,
     wxString rolename, wxString charset, wxString dbfilename,
     wxString bkfilename, IBPP::BRF flags, int interval, int parallel,
     wxString skipData, wxString includeData, wxString cryptPluginName,
     wxString keyPlugin, wxString keyEncrypt)
     :factorM(0),
-    BackupRestoreThread(frame, server, username, password,rolename, charset, 
+    BackupRestoreThread(frame, action, server, username, password,rolename, charset,
         dbfilename,bkfilename, flags, interval, parallel, skipData, includeData, cryptPluginName,
         keyPlugin, keyEncrypt)
 {

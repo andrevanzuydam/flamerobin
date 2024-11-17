@@ -470,7 +470,7 @@ if(APPLE)
     endfunction()
 
     # Add resources
-	add_resources(FIREBIRD_LIBS ${CMAKE_SOURCE_DIR}/firebird-libs MacOS *)
+	add_resources(FIREBIRD_LIBS ${CMAKE_SOURCE_DIR}/firebird-libs MacOS/lib *)
     add_resources(HTML_TEMPLATES ${CMAKE_SOURCE_DIR}/html-templates SharedSupport/html-templates *)
     add_resources(CONF_DEFS ${CMAKE_SOURCE_DIR}/conf-defs SharedSupport/conf-defs *)
     add_resources(DOCS ${CMAKE_SOURCE_DIR}/docs SharedSupport/docs *)

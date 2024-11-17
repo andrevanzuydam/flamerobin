@@ -31,56 +31,68 @@
 
 class BackupThread;
 
-class BackupFrame: public BackupRestoreBaseFrame {
+class BackupFrame : public BackupRestoreBaseFrame {
     friend class BackupThread;
-private:
-    wxCheckBox* checkbox_checksum;
-    wxCheckBox* checkbox_limbo;
-    wxCheckBox* checkbox_garbage;
-    wxCheckBox* checkbox_transport;
-    wxCheckBox* checkbox_extern;
 
-    wxCheckBox* checkbox_expand;
-    wxCheckBox* checkbox_olddescription;
-    wxCheckBox* checkbox_noDBtrigger;
-    wxCheckBox* checkbox_zip;
+private:
+    wxCheckBox *checkbox_checksum;
+    wxCheckBox *checkbox_limbo;
+    wxCheckBox *checkbox_garbage;
+    wxCheckBox *checkbox_transport;
+    wxCheckBox *checkbox_extern;
+
+    wxCheckBox *checkbox_expand;
+    wxCheckBox *checkbox_olddescription;
+    wxCheckBox *checkbox_noDBtrigger;
+    wxCheckBox *checkbox_zip;
 
     virtual void createControls();
+
     virtual void layoutControls();
+
     virtual void updateControls();
 
     static wxString getFrameId(DatabasePtr db);
-protected:
-    virtual void doReadConfigSettings(const wxString& prefix);
-    virtual void doWriteConfigSettings(const wxString& prefix) const;
-    virtual const wxString getName() const;
-public:
-    BackupFrame(wxWindow* parent, DatabasePtr db);
 
-    static BackupFrame* findFrameFor(DatabasePtr db);
+protected:
+    virtual void doReadConfigSettings(const wxString &prefix);
+
+    virtual void doWriteConfigSettings(const wxString &prefix) const;
+
+    virtual const wxString getName() const;
+
+public:
+    BackupFrame(wxWindow *parent, DatabasePtr db);
+
+    static BackupFrame *findFrameFor(DatabasePtr db);
+
 private:
     // event handling
-    void OnBrowseButtonClick(wxCommandEvent& event);
-    void OnStartButtonClick(wxCommandEvent& event);
+    void OnBrowseButtonClick(wxCommandEvent &event);
 
-    DECLARE_EVENT_TABLE()
+    void OnStartButtonClick(wxCommandEvent &event);
+
+DECLARE_EVENT_TABLE()
 };
 
-class BackupThread : public BackupRestoreThread
-{
+class BackupThread : public BackupRestoreThread {
 public:
-    BackupThread(BackupFrame* frame, wxString server,
-        wxString username, wxString password, wxString rolename, wxString charset,
-        wxString dbfilename, wxString bkfilename,
-        IBPP::BRF flags, int interval, int parallel,
-        wxString skipData, wxString includeData,
-        wxString cryptPluginName, wxString keyPlugin, wxString keyEncrypt
+    BackupThread(BackupFrame *frame,
+                 wxString action,
+                 wxString server,
+                 wxString username, wxString password, wxString rolename, wxString charset,
+                 wxString dbfilename, wxString bkfilename,
+                 IBPP::BRF flags, int interval, int parallel,
+                 wxString skipData, wxString includeData,
+                 wxString cryptPluginName, wxString keyPlugin, wxString keyEncrypt
     );
+
 protected:
     virtual void Execute(IBPP::Service);
 
     int factorM;
 
 };
+
 #endif // BACKUPFRAME_H
 

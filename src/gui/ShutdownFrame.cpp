@@ -234,7 +234,7 @@ void ShutdownFrame::OnStartButtonClick(wxCommandEvent& WXUNUSED(event))
 
     int ltimeout = spinctrl_timeout->GetValue();
 
-    startThread(std::make_unique<ShutdownThread>(this,
+    startThread(std::make_unique<ShutdownThread>(this, action,
         server->getConnectionString(), username, password, rolename, charset,
         database->getPath(), (IBPP::DSM)flags, ltimeout));
 
@@ -242,11 +242,12 @@ void ShutdownFrame::OnStartButtonClick(wxCommandEvent& WXUNUSED(event))
 }
 
 ShutdownThread::ShutdownThread(ShutdownFrame* frame,
+    wxString action,
     wxString server, wxString username, wxString password,
     wxString rolename, wxString charset, wxString dbfilename,
     IBPP::DSM flags, int timeout)
     :timeoutM(timeout),
-    ShutdownStartupThread(frame, server, username, password, 
+    ShutdownStartupThread(frame, action, server, username, password,
         rolename, charset, dbfilename, flags)
 {
 }

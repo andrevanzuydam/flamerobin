@@ -151,4 +151,4 @@ Add dependencies for compilation, also requires firebird install for relevant MA
 brew install wxwidgets
 brew install boost
 
-CLion editor from InteliJ seems to work out of the box for compiling
+CLion editor from Jetbrains seems to work out of the box for compiling

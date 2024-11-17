@@ -35,30 +35,36 @@
 #include "metadata/database.h"
 #include "metadata/MetadataClasses.h"
 
-class ShutdownStartupBaseFrame: public ServiceBaseFrame
-{
+class ShutdownStartupBaseFrame : public ServiceBaseFrame {
 public:
 
     // make sure that thread gets deleted
     virtual bool Destroy();
+
 protected:
 
     void cancelShutdownStartup();
 
-    virtual void doReadConfigSettings(const wxString& prefix);
-    virtual void doWriteConfigSettings(const wxString& prefix) const;
+    void doReadConfigSettings(const wxString &prefix) override;
+
+    void doWriteConfigSettings(const wxString &prefix) const override;
+
     virtual const wxString getStorageName() const;
 
     virtual void createControls();
+
     virtual void layoutControls();
+
     virtual void updateControls();
 
-    ShutdownStartupBaseFrame(wxWindow* parent, DatabasePtr db);
+    ShutdownStartupBaseFrame(wxWindow *parent, DatabasePtr db);
+
 private:
 
 
     // observer stuff
-    virtual void subjectRemoved(Subject* subject);
+    virtual void subjectRemoved(Subject *subject);
+
     virtual void update();
 
 protected:
@@ -66,24 +72,25 @@ protected:
         ID_radiobox_state = 101,
     };
 
-    wxRadioBox* radiobox_state;
+    wxRadioBox *radiobox_state;
+
     IBPP::DSM getDatabaseMode();
 
 private:
     // event handling
 
-    void OnVerboseLogChange(wxCommandEvent& event);
+    void OnVerboseLogChange(wxCommandEvent &event);
 
-    DECLARE_EVENT_TABLE()
+DECLARE_EVENT_TABLE()
 };
 
-class ShutdownStartupThread : public ServiceThread
-{
+class ShutdownStartupThread : public ServiceThread {
 public:
-    ShutdownStartupThread(ShutdownStartupBaseFrame* frame,  wxString server,
-        wxString username, wxString password, wxString rolename, wxString charset,
-        wxString dbfilename, IBPP::DSM flags
+    ShutdownStartupThread(ShutdownStartupBaseFrame *frame, wxString action, wxString server,
+                          wxString username, wxString password, wxString rolename, wxString charset,
+                          wxString dbfilename, IBPP::DSM flags
     );
+
 protected:
     wxString dbfileM;
     IBPP::DSM dsmM;
