@@ -214,6 +214,11 @@ wxString Domain::dataTypeToString(short datatype, short scale, short precision,
         return retval;
     }
 
+    //This seems to be a boolean or binary field
+    if (datatype == 14 && subtype == 1) {
+        return SqlTokenizer::getKeyword(kwBINARY);
+    }
+
     // INTEGER(prec=0), DECIMAL(sub_type=2), NUMERIC(sub_t=1), BIGINT(sub_t=0), 
     // Int128(sub_t=0)
     if (datatype == 7 || datatype == 8 || datatype == 16 ||
@@ -261,6 +266,8 @@ wxString Domain::dataTypeToString(short datatype, short scale, short precision,
             return SqlTokenizer::getKeyword(kwDATE);
         case 13:
             return SqlTokenizer::getKeyword(kwTIME);
+        case 14:
+            return SqlTokenizer::getKeyword(kwCHAR);
         case 28: // Firebird v4
             return SqlTokenizer::getKeyword(kwTIME) + " " +
                    SqlTokenizer::getKeyword(kwWITH) + " " +
@@ -291,9 +298,6 @@ wxString Domain::dataTypeToString(short datatype, short scale, short precision,
             return retval;
 
             // add length for char, varchar and cstring
-        case 14:
-            retval = SqlTokenizer::getKeyword(kwCHAR);
-            break;
         case 37:
             retval = SqlTokenizer::getKeyword(kwVARCHAR);
             break;
