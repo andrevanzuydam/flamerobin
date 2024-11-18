@@ -23,12 +23,15 @@
 
 
 // For compilers that support precompilation, includes "wx/wx.h".
+#include <libxml/hash.h>
 #include "wx/wxprec.h"
 
 // for all others, include the necessary headers (this file is usually all you
 // need because it includes almost all "standard" wxWindows headers
 #ifndef WX_PRECOMP
-    #include "wx/wx.h"
+
+#include "wx/wx.h"
+
 #endif
 
 #include "core/FRError.h"
@@ -42,59 +45,57 @@
 #include "sql/SqlTokenizer.h"
 
 /*static*/
-std::string Domain::getLoadStatement(bool list)
-{
-    std::string stmt("select "
-            " f.rdb$field_name,"            //  1
-            " f.rdb$field_type,"            //  2
-            " f.rdb$field_sub_type,"        //  3
-            " f.rdb$field_length,"          //  4
-            " f.rdb$field_precision,"       //  5
-            " f.rdb$field_scale,"           //  6
-            " c.rdb$character_set_name,"    //  7
-            " f.rdb$character_length,"      //  8
-            " f.rdb$null_flag,"             //  9
-            " f.rdb$default_source,"        // 10
-            " l.rdb$collation_name,"        // 11
-            " f.rdb$validation_source,"     // 12
-            " f.rdb$computed_blr,"          // 13
-            " c.rdb$bytes_per_character"    // 14
-        " from rdb$fields f"
-        " left outer join rdb$character_sets c"
-            " on c.rdb$character_set_id = f.rdb$character_set_id"
-        " left outer join rdb$collations l"
-            " on l.rdb$collation_id = f.rdb$collation_id"
-            " and l.rdb$character_set_id = f.rdb$character_set_id"
-        " left outer join rdb$types t on f.rdb$field_type=t.rdb$type"
-        " where t.rdb$field_name = ? and f.rdb$field_name ");
-	if (list) {
-		stmt += "not starting with 'RDB$' ";
-		//if (db->getInfo().getODSVersionIsHigherOrEqualTo(12, 0)) //If Firebird 3 ODS, remove SEC$DOMAINs, this is a static method, so I wont be able to get ODS
-		stmt += "and f.RDB$SYSTEM_FLAG=0 ";//Need to test on Firebird 1
-		stmt += "order by 1";
-	}
-    else
-        stmt += "= ?";
+std::string Domain::getLoadStatement(bool list) {
+    std::string stmt(
+        "SELECT r.RDB$FIELD_NAME, "
+           " f.RDB$FIELD_TYPE, "
+           " f.RDB$FIELD_SUB_TYPE, "
+           " f.RDB$FIELD_LENGTH, "
+           " f.RDB$FIELD_PRECISION,"
+           " f.RDB$FIELD_SCALE,"
+           " cs.RDB$CHARACTER_SET_NAME,"
+           " f.RDB$CHARACTER_LENGTH,"
+           " f.RDB$NULL_FLAG,"
+           " r.RDB$DEFAULT_SOURCE,"
+           " c.RDB$COLLATION_NAME,"
+           " f.RDB$VALIDATION_SOURCE,"
+           " f.RDB$COMPUTED_BLR,"
+           " cs.RDB$BYTES_PER_CHARACTER, "
+           " f.RDB$FIELD_NAME "
+           " FROM RDB$RELATION_FIELDS r"
+           " JOIN RDB$FIELDS f"
+           " ON r.RDB$FIELD_SOURCE = f.RDB$FIELD_NAME"
+           " JOIN RDB$COLLATIONS c"
+           " ON c.RDB$COLLATION_ID = iif (f.RDB$COLLATION_ID is null, 0, f.RDB$COLLATION_ID)"
+           " AND c.RDB$CHARACTER_SET_ID = iif (f.RDB$CHARACTER_SET_ID is null, 0, f.RDB$CHARACTER_SET_ID)"
+           " JOIN RDB$CHARACTER_SETS cs"
+           " ON cs.RDB$CHARACTER_SET_ID = c.RDB$CHARACTER_SET_ID ");
+    if (list) {
+        stmt += " not starting with 'RDB$' ";
+        stmt += " and r.RDB$SYSTEM_FLAG = 0 ";//Need to test on Firebird 1
+        stmt += " order by 1";
+    } else {
+        stmt += " AND (f.RDB$FIELD_NAME = ? or r.RDB$FIELD_NAME = ?) ";
+    }
+
     return stmt;
 }
 
-Domain::Domain(DatabasePtr database, const wxString& name)
-    : MetadataItem((hasSystemPrefix(name) ? ntSysDomain : ntDomain),
-        database.get(), name)
-{
+Domain::Domain(DatabasePtr database, const wxString &name)
+        : MetadataItem((hasSystemPrefix(name) ? ntSysDomain : ntDomain),
+                       database.get(), name) {
 }
 
-void Domain::loadProperties()
-{
+void Domain::loadProperties() {
     setPropertiesLoaded(false);
 
     DatabasePtr db = getDatabase();
-    MetadataLoader* loader = db->getMetadataLoader();
+    MetadataLoader *loader = db->getMetadataLoader();
     MetadataLoaderTransaction tr(loader);
-    wxMBConv* converter = db->getCharsetConverter();
+    wxMBConv *converter = db->getCharsetConverter();
 
-    IBPP::Statement& st1 = loader->getStatement(getLoadStatement(false));
-    st1->Set(1, wx2std("RDB$FIELD_TYPE", converter)); 
+    IBPP::Statement &st1 = loader->getStatement(getLoadStatement(false));
+    st1->Set(1, wx2std("RDB$FIELD_TYPE", converter));
     st1->Set(2, wx2std(getName_(), converter));
     st1->Execute();
     if (!st1->Fetch())
@@ -104,8 +105,7 @@ void Domain::loadProperties()
 }
 
 /*static*/
-wxString Domain::trimDefaultValue(const wxString& value)
-{
+wxString Domain::trimDefaultValue(const wxString &value) {
     // Some users reported two spaces before DEFAULT word in source
     // Also, equals sign is also allowed in newer FB versions
     // Trim(false) is trim-left
@@ -119,8 +119,7 @@ wxString Domain::trimDefaultValue(const wxString& value)
     return defValue;
 }
 
-void Domain::loadProperties(IBPP::Statement& statement, wxMBConv* converter)
-{
+void Domain::loadProperties(IBPP::Statement &statement, wxMBConv *converter) {
     setPropertiesLoaded(false);
 
     statement->Get(2, &datatypeM);
@@ -152,31 +151,26 @@ void Domain::loadProperties(IBPP::Statement& statement, wxMBConv* converter)
         statement->Get(6, &scaleM);
     if (statement->IsNull(7))
         charsetM = "";
-    else
-    {
+    else {
         std::string s;
         statement->Get(7, s);
         charsetM = std2wxIdentifier(s, converter);
     }
     bool notNull = false;
-    if (!statement->IsNull(9))
-    {
+    if (!statement->IsNull(9)) {
         statement->Get(9, notNull);
     }
     nullableM = !notNull;
     hasDefaultM = !statement->IsNull(10);
-    if (hasDefaultM)
-    {
+    if (hasDefaultM) {
         readBlob(statement, 10, defaultM, converter);
         defaultM = trimDefaultValue(defaultM);
-    }
-    else
+    } else
         defaultM = wxEmptyString;
 
     if (statement->IsNull(11))
         collationM = wxEmptyString;
-    else
-    {
+    else {
         std::string s;
         statement->Get(11, s);
         collationM = std2wxIdentifier(s, converter);
@@ -186,14 +180,12 @@ void Domain::loadProperties(IBPP::Statement& statement, wxMBConv* converter)
     setPropertiesLoaded(true);
 }
 
-bool Domain::isString()
-{
+bool Domain::isString() {
     ensurePropertiesLoaded();
     return (datatypeM == 14 || datatypeM == 10 || datatypeM == 37);
 }
 
-bool Domain::isSystem() const
-{
+bool Domain::isSystem() const {
     wxString prefix(getName_().substr(0, 4));
     if (prefix == "MON$" || prefix == "SEC$" || prefix == "RDB$")
         return true;
@@ -204,22 +196,19 @@ bool Domain::isSystem() const
 }
 
 //! returns column's datatype as human readable wxString.
-wxString Domain::getDatatypeAsString()
-{
+wxString Domain::getDatatypeAsString() {
     ensurePropertiesLoaded();
     return dataTypeToString(datatypeM, scaleM, precisionM, subtypeM, lengthM);
 }
 
 /* static*/
 wxString Domain::dataTypeToString(short datatype, short scale, short precision,
-    short subtype, short length)
-{
+                                  short subtype, short length) {
     wxString retval;
 
     // special case (mess that some tools (ex. IBExpert) make by only
     // setting scale and not changing type)
-    if (datatype == 27 && scale < 0)
-    {
+    if (datatype == 27 && scale < 0) {
         retval = SqlTokenizer::getKeyword(kwNUMERIC);
         retval << "(15," << -scale << ")";
         return retval;
@@ -227,36 +216,31 @@ wxString Domain::dataTypeToString(short datatype, short scale, short precision,
 
     // INTEGER(prec=0), DECIMAL(sub_type=2), NUMERIC(sub_t=1), BIGINT(sub_t=0), 
     // Int128(sub_t=0)
-    if (datatype == 7 || datatype == 8 || datatype == 16 || 
-        datatype == 26)
-    {
-        if (scale == 0)
-        {
+    if (datatype == 7 || datatype == 8 || datatype == 16 ||
+        datatype == 26) {
+        if (scale == 0) {
             if (datatype == 7)
                 return SqlTokenizer::getKeyword(kwSMALLINT);
             if (datatype == 8)
                 return SqlTokenizer::getKeyword(kwINTEGER);
         }
 
-        if (scale == 0 && subtype == 0)
-        {
-            switch (length)
-            {
-                case  8: return SqlTokenizer::getKeyword(kwBIGINT);
-                case 16: return SqlTokenizer::getKeyword(kwINT128);
+        if (scale == 0 && subtype == 0) {
+            switch (length) {
+                case 8:
+                    return SqlTokenizer::getKeyword(kwBIGINT);
+                case 16:
+                    return SqlTokenizer::getKeyword(kwINT128);
             }
         }
 
         retval = SqlTokenizer::getKeyword(
-            (subtype == 2) ? kwDECIMAL : kwNUMERIC);
+                (subtype == 2) ? kwDECIMAL : kwNUMERIC);
         retval << "(";
-        if (datatype == 26)
-        {
+        if (datatype == 26) {
             // Firebird v4 - Int128
             retval << precision;
-        }
-        else
-        {
+        } else {
             if (precision <= 0 || precision > 18)
                 retval << 18;
             else
@@ -266,13 +250,12 @@ wxString Domain::dataTypeToString(short datatype, short scale, short precision,
         return retval;
     }
 
-    switch (datatype)
-    {
+    switch (datatype) {
         case 10:
             return SqlTokenizer::getKeyword(kwFLOAT);
         case 27:
             return SqlTokenizer::getKeyword(kwDOUBLE) + " "
-                + SqlTokenizer::getKeyword(kwPRECISION);
+                   + SqlTokenizer::getKeyword(kwPRECISION);
 
         case 12:
             return SqlTokenizer::getKeyword(kwDATE);
@@ -280,24 +263,24 @@ wxString Domain::dataTypeToString(short datatype, short scale, short precision,
             return SqlTokenizer::getKeyword(kwTIME);
         case 28: // Firebird v4
             return SqlTokenizer::getKeyword(kwTIME) + " " +
-                SqlTokenizer::getKeyword(kwWITH) + " " +
-                SqlTokenizer::getKeyword(kwTIME) + " " +
-                SqlTokenizer::getKeyword(kwZONE);
+                   SqlTokenizer::getKeyword(kwWITH) + " " +
+                   SqlTokenizer::getKeyword(kwTIME) + " " +
+                   SqlTokenizer::getKeyword(kwZONE);
         case 35:
             return SqlTokenizer::getKeyword(kwTIMESTAMP);
         case 29: // Firebird v4
             return SqlTokenizer::getKeyword(kwTIMESTAMP) + " " +
-                SqlTokenizer::getKeyword(kwWITH) + " " +
-                SqlTokenizer::getKeyword(kwTIME) + " " +
-                SqlTokenizer::getKeyword(kwZONE);
+                   SqlTokenizer::getKeyword(kwWITH) + " " +
+                   SqlTokenizer::getKeyword(kwTIME) + " " +
+                   SqlTokenizer::getKeyword(kwZONE);
 
-        // add subtype for blob
+            // add subtype for blob
         case 261:
             retval = SqlTokenizer::getKeyword(kwBLOB) + " "
-                + SqlTokenizer::getKeyword(kwSUB_TYPE) + " ";
+                     + SqlTokenizer::getKeyword(kwSUB_TYPE) + " ";
             retval << subtype;
             return retval;
-            
+
         case 23: // Firebird v3
             return SqlTokenizer::getKeyword(kwBOOLEAN);
 
@@ -307,7 +290,7 @@ wxString Domain::dataTypeToString(short datatype, short scale, short precision,
             retval << "(" << precision << ")";
             return retval;
 
-        // add length for char, varchar and cstring
+            // add length for char, varchar and cstring
         case 14:
             retval = SqlTokenizer::getKeyword(kwCHAR);
             break;
@@ -322,23 +305,19 @@ wxString Domain::dataTypeToString(short datatype, short scale, short precision,
     return retval;
 }
 
-wxString Domain::getCollation()
-{
+wxString Domain::getCollation() {
     ensurePropertiesLoaded();
     return collationM;
 }
 
-wxString Domain::getCheckConstraint()
-{
+wxString Domain::getCheckConstraint() {
     ensurePropertiesLoaded();
     return checkM;
 }
 
-bool Domain::getDefault(wxString& value)
-{
+bool Domain::getDefault(wxString &value) {
     ensurePropertiesLoaded();
-    if (hasDefaultM)
-    {
+    if (hasDefaultM) {
         value = defaultM;
         return true;
     }
@@ -346,32 +325,26 @@ bool Domain::getDefault(wxString& value)
     return false;
 }
 
-bool Domain::isNullable()
-{
+bool Domain::isNullable() {
     ensurePropertiesLoaded();
     return nullableM;
 }
 
-void Domain::getDatatypeParts(wxString& type, wxString& size, wxString& scale)
-{
+void Domain::getDatatypeParts(wxString &type, wxString &size, wxString &scale) {
     size = scale = wxEmptyString;
     wxString datatype = getDatatypeAsString();
     wxString::size_type p1 = datatype.find("(");
-    if (p1 != wxString::npos)
-    {
+    if (p1 != wxString::npos) {
         type = datatype.substr(0, p1);
         wxString::size_type p2 = datatype.find(",");
         if (p2 == wxString::npos)
             p2 = datatype.find(")");
-        else
-        {
+        else {
             wxString::size_type p3 = datatype.find(")");
             scale = datatype.substr(p2 + 1, p3 - p2 - 1);
         }
         size = datatype.substr(p1 + 1, p2 - p1 - 1);
-    }
-    else
-    {
+    } else {
         type = datatype;
         // HACK ALERT: some better fix needed, but we don't want the subtype
         if (datatypeM == 261)
@@ -379,38 +352,33 @@ void Domain::getDatatypeParts(wxString& type, wxString& size, wxString& scale)
     }
 }
 
-wxString Domain::getCharset()
-{
+wxString Domain::getCharset() {
     ensurePropertiesLoaded();
     return charsetM;
 }
 
-wxString Domain::getAlterSqlTemplate() const
-{
+wxString Domain::getAlterSqlTemplate() const {
     return "ALTER DOMAIN " + getQuotedName() + "\n"
-        "  SET DEFAULT { literal | NULL | USER }\n"
-        "  | DROP DEFAULT\n"
-        "  | ADD [CONSTRAINT] CHECK (condition)\n"
-        "  | DROP CONSTRAINT\n"
-        "  | new_name\n"
-        "  | TYPE new_datatype;\n";
+                                               "  SET DEFAULT { literal | NULL | USER }\n"
+                                               "  | DROP DEFAULT\n"
+                                               "  | ADD [CONSTRAINT] CHECK (condition)\n"
+                                               "  | DROP CONSTRAINT\n"
+                                               "  | new_name\n"
+                                               "  | TYPE new_datatype;\n";
 }
 
-const wxString Domain::getTypeName() const
-{
+const wxString Domain::getTypeName() const {
     return "DOMAIN";
 }
 
-void Domain::acceptVisitor(MetadataItemVisitor* visitor)
-{
+void Domain::acceptVisitor(MetadataItemVisitor *visitor) {
     visitor->visitDomain(*this);
 }
 
-std::vector<Privilege>* Domain::getPrivileges(bool splitPerGrantor)
-{
+std::vector<Privilege> *Domain::getPrivileges(bool splitPerGrantor) {
     // load privileges from database and return the pointer to collection
     DatabasePtr db = getDatabase();
-    MetadataLoader* loader = db->getMetadataLoader();
+    MetadataLoader *loader = db->getMetadataLoader();
 
     privilegesM.clear();
 
@@ -420,23 +388,22 @@ std::vector<Privilege>* Domain::getPrivileges(bool splitPerGrantor)
     // can possibly use the same transaction
     MetadataLoaderTransaction tr(loader);
     SubjectLocker lock(this);
-    wxMBConv* converter = db->getCharsetConverter();
+    wxMBConv *converter = db->getCharsetConverter();
 
-    IBPP::Statement& st1 = loader->getStatement(
-        "select RDB$USER, RDB$USER_TYPE, RDB$GRANTOR, RDB$PRIVILEGE, "
-        "RDB$GRANT_OPTION, RDB$FIELD_NAME "
-        "from RDB$USER_PRIVILEGES "
-        "where RDB$RELATION_NAME = ? and rdb$object_type = 9 "
-        "order by rdb$user, rdb$user_type, rdb$grantor, rdb$grant_option, rdb$privilege"
+    IBPP::Statement &st1 = loader->getStatement(
+            "select RDB$USER, RDB$USER_TYPE, RDB$GRANTOR, RDB$PRIVILEGE, "
+            "RDB$GRANT_OPTION, RDB$FIELD_NAME "
+            "from RDB$USER_PRIVILEGES "
+            "where RDB$RELATION_NAME = ? and rdb$object_type = 9 "
+            "order by rdb$user, rdb$user_type, rdb$grantor, rdb$grant_option, rdb$privilege"
     );
     st1->Set(1, wx2std(getName_(), converter));
     st1->Execute();
     std::string lastuser;
     std::string lastGrantor;
     int lasttype = -1;
-    Privilege* pr = 0;
-    while (st1->Fetch())
-    {
+    Privilege *pr = 0;
+    while (st1->Fetch()) {
         std::string user, grantor, privilege, field;
         int usertype, grantoption = 0;
         st1->Get(1, user);
@@ -446,8 +413,7 @@ std::vector<Privilege>* Domain::getPrivileges(bool splitPerGrantor)
         if (!st1->IsNull(5))
             st1->Get(5, grantoption);
         st1->Get(6, field);
-        if (!pr || user != lastuser || usertype != lasttype || (splitPerGrantor && grantor != lastGrantor))
-        {
+        if (!pr || user != lastuser || usertype != lasttype || (splitPerGrantor && grantor != lastGrantor)) {
             Privilege p(this, wxString(user.c_str(), *converter).Strip(), usertype);
             privilegesM.push_back(p);
             pr = &privilegesM.back();
@@ -456,37 +422,33 @@ std::vector<Privilege>* Domain::getPrivileges(bool splitPerGrantor)
             lasttype = usertype;
         }
         pr->addPrivilege(privilege[0], std2wxIdentifier(grantor, converter),
-            grantoption == 1, std2wxIdentifier(field, converter));
+                         grantoption == 1, std2wxIdentifier(field, converter));
     }
     return &privilegesM;
 }
 
 // DomainCollectionBase
 DomainCollectionBase::DomainCollectionBase(NodeType type,
-        DatabasePtr database, const wxString& name)
-    : MetadataCollection<Domain>(type, database, name)
-{
+                                           DatabasePtr database, const wxString &name)
+        : MetadataCollection<Domain>(type, database, name) {
 }
 
-DomainPtr DomainCollectionBase::getDomain(const wxString& name)
-{
+DomainPtr DomainCollectionBase::getDomain(const wxString &name) {
     DomainPtr domain = findByName(name);
-    if (!domain)
-    {
+    if (!domain) {
         SubjectLocker lock(this);
 
         DatabasePtr db = getDatabase();
-        MetadataLoader* loader = db->getMetadataLoader();
+        MetadataLoader *loader = db->getMetadataLoader();
         MetadataLoaderTransaction tr(loader);
-        wxMBConv* converter = db->getCharsetConverter();
+        wxMBConv *converter = db->getCharsetConverter();
 
-        IBPP::Statement& st1 = loader->getStatement(
-            Domain::getLoadStatement(false));
-        st1->Set(1, wx2std("RDB$FIELD_TYPE", converter)); 
+        IBPP::Statement &st1 = loader->getStatement(
+                Domain::getLoadStatement(false));
+        st1->Set(1, wx2std(name, converter));
         st1->Set(2, wx2std(name, converter));
         st1->Execute();
-        if (st1->Fetch())
-        {
+        if (st1->Fetch()) {
             domain = insert(name);
             domain->loadProperties(st1, converter);
         }
@@ -496,54 +458,45 @@ DomainPtr DomainCollectionBase::getDomain(const wxString& name)
 
 // Domains collection
 Domains::Domains(DatabasePtr database)
-    : DomainCollectionBase(ntDomains, database, _("Domains"))
-{
+        : DomainCollectionBase(ntDomains, database, _("Domains")) {
 }
 
-void Domains::acceptVisitor(MetadataItemVisitor* visitor)
-{
+void Domains::acceptVisitor(MetadataItemVisitor *visitor) {
     visitor->visitDomains(*this);
 }
 
-void Domains::load(ProgressIndicator* progressIndicator)
-{
+void Domains::load(ProgressIndicator *progressIndicator) {
     wxString stmt = "select rdb$field_name from rdb$fields "
-        " where rdb$system_flag = 0 and rdb$field_name not starting 'RDB$' "
-        " order by 1";
+                    " where rdb$system_flag = 0 and rdb$field_name not starting 'RDB$' "
+                    " order by 1";
     setItems(getDatabase()->loadIdentifiers(stmt, progressIndicator));
 }
 
-void Domains::loadChildren()
-{
+void Domains::loadChildren() {
     load(0);
 }
 
-const wxString Domains::getTypeName() const
-{
+const wxString Domains::getTypeName() const {
     return "DOMAIN_COLLECTION";
 }
 
 // System domains collection
 SysDomains::SysDomains(DatabasePtr database)
-    : DomainCollectionBase(ntSysDomains, database, _("System Domains"))
-{
+        : DomainCollectionBase(ntSysDomains, database, _("System Domains")) {
 }
 
-void SysDomains::acceptVisitor(MetadataItemVisitor* visitor)
-{
+void SysDomains::acceptVisitor(MetadataItemVisitor *visitor) {
     visitor->visitSysDomains(*this);
 }
 
-void SysDomains::load(ProgressIndicator* progressIndicator)
-{
+void SysDomains::load(ProgressIndicator *progressIndicator) {
     wxString stmt = "select rdb$field_name from rdb$fields "
-        " where rdb$system_flag = 1 "
-        " order by 1";
+                    " where rdb$system_flag = 1 "
+                    " order by 1";
     setItems(getDatabase()->loadIdentifiers(stmt, progressIndicator));
 }
 
-const wxString SysDomains::getTypeName() const
-{
+const wxString SysDomains::getTypeName() const {
     return "SYSDOMAIN_COLLECTION";
 }
 

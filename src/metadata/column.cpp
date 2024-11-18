@@ -74,9 +74,9 @@ wxString ColumnBase::getDatatype(bool useConfig)
         if (datatype.IsEmpty())
             datatype = d ? d->getDatatypeAsString() : sourceM;
     }
-    else
+    else {
         datatype = (d ? d->getDatatypeAsString() : sourceM);
-
+    }
 
 
     enum
@@ -310,7 +310,7 @@ wxString Column::getSource(bool identity)
         else {
             wxString lSource = ColumnBase::getSource(identity);
             if (lSource.Contains("RDB$"))
-                return  getDatatype(false);
+                return  lSource;
             else
                 return ColumnBase::getSource(identity);
         }

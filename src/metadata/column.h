@@ -57,7 +57,7 @@ class Column: public ColumnBase
 {
 private:
     bool computedM;
-    wxString sourceM, computedSourceM, collationM;
+    wxString sourceM, domainM, computedSourceM, collationM;
     wxString identityTypeM; // ODS 12
     long initialValueM, incrementalValueM; // ODS 12
 public:
