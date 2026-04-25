@@ -465,12 +465,6 @@ if(APPLE)
 
     add_definitions(-DFR_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
 
-	# Assumes you have installed the firebird database engine
-	execute_process(
-		COMMAND "cp /Library/Frameworks/Firebird.framework/Resources/lib/* ${CMAKE_SOURCE_DIR}/firebird-libs"
-		WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-	)
-
     # Create the revision include file
     execute_process(
         COMMAND "${CMAKE_SOURCE_DIR}/update-revision-info.sh"
@@ -497,7 +491,8 @@ if(APPLE)
     endfunction()
 
     # Add resources
-	add_resources(FIREBIRD_LIBS ${CMAKE_SOURCE_DIR}/firebird-libs MacOS/lib *)
+    # Note: Firebird dylibs are bundled at release time via dist/macos/release.sh
+    # (dylibbundler), not at build time, so they are not listed here.
     add_resources(HTML_TEMPLATES ${CMAKE_SOURCE_DIR}/html-templates SharedSupport/html-templates *)
     add_resources(CONF_DEFS ${CMAKE_SOURCE_DIR}/conf-defs SharedSupport/conf-defs *)
     add_resources(DOCS ${CMAKE_SOURCE_DIR}/docs SharedSupport/docs *)
@@ -507,7 +502,6 @@ if(APPLE)
     add_resources(XML_STYLES ${CMAKE_SOURCE_DIR}/xml-styles SharedSupport/xml-styles *)
 
     set(RESOURCE_FILES_MAC
-			${FIREBIRD_LIBS}
             ${HTML_TEMPLATES}
             ${CONF_DEFS}
             ${DOCS}
