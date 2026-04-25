@@ -177,12 +177,11 @@ void ShutdownStartupBaseFrame::OnVerboseLogChange(wxCommandEvent& WXUNUSED(event
     updateMessages(0, msgsM.GetCount());
 }
 
-ShutdownStartupThread::ShutdownStartupThread(ShutdownStartupBaseFrame* frame,
-    wxString action,
+ShutdownStartupThread::ShutdownStartupThread(ShutdownStartupBaseFrame* frame, 
     wxString server, wxString username, wxString password, wxString rolename, 
     wxString charset, wxString dbfilename, IBPP::DSM flags)
     :dbfileM(dbfilename), 
-    ServiceThread(frame, action, server, username, password, rolename, charset)
+    ServiceThread(frame, server, username, password, rolename, charset)
 {
     dsmM = (IBPP::DSM)((int)flags | (int)IBPP::brVerbose);
 }

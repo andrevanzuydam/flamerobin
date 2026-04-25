@@ -199,12 +199,11 @@ void BackupRestoreBaseFrame::createControls()
     button_browse = new wxButton(panel_controls, ID_button_browse, _("..."),
         wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
 
+    checkbox_metadata = new wxCheckBox(panel_controls, wxID_ANY,
+        _("Only metadata (FB2.5+)"));
+
     checkbox_showlog = new wxCheckBox(panel_controls, ID_checkbox_showlog,
         _("Show complete log"));
-    checkbox_showlog->SetValue(true);
-
-    checkbox_metadata = new wxCheckBox(panel_controls, wxID_ANY,
-                                       _("Only metadata (FB2.5+)"));
 
     spinctrl_showlogInterval = new wxSpinCtrl(panel_controls, ID_spinctrl_showlogInterval);
     spinctrl_showlogInterval->SetRange(0, 32767);
@@ -246,14 +245,14 @@ void BackupRestoreBaseFrame::layoutControls()
 
 
     {
-        auto* gsizer = new wxGridSizer(1, 4,
+        wxGridSizer* gsizer = new wxGridSizer(1, 4,
             styleguide().getCheckboxSpacing(),
             styleguide().getUnrelatedControlMargin(wxHORIZONTAL));
 
         gsizer->Add(checkbox_metadata, 0, wxEXPAND);
         gsizer->Add(checkbox_showlog, 0, wxEXPAND);
         {
-            auto* sizer = new wxBoxSizer(wxHORIZONTAL);
+            wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
             sizer->Add(new wxStaticText(panel_controls, wxID_ANY,
                 _("Verbose interval (FB3.0+)")), 0, wxALIGN_CENTER_VERTICAL);
             sizer->Add(styleguide().getControlLabelMargin(), 0);
@@ -262,7 +261,7 @@ void BackupRestoreBaseFrame::layoutControls()
             gsizer->Add(sizer);
         }
         {
-            auto* sizer = new wxBoxSizer(wxHORIZONTAL);
+            wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
             sizer->Add(new wxStaticText(panel_controls, wxID_ANY,
                 _("Parallel (FB3.0+)")), 0, wxALIGN_CENTER_VERTICAL);
             sizer->Add(styleguide().getControlLabelMargin(), 0);
@@ -436,7 +435,6 @@ void BackupRestoreBaseFrame::OnVerboseLogChange(wxCommandEvent& WXUNUSED(event))
 
 
 BackupRestoreThread::BackupRestoreThread(BackupRestoreBaseFrame* frame,
-    wxString action,
     wxString server, wxString username, wxString password,
     wxString rolename, wxString charset, wxString dbfilename,
     wxString bkfilename, IBPP::BRF flags, int interval, int parallel,
@@ -446,7 +444,7 @@ BackupRestoreThread::BackupRestoreThread(BackupRestoreBaseFrame* frame,
     dbfileM(dbfilename), bkfileM(bkfilename), intervalM(interval), parallelM(parallel),
     skipDataM(skipData), includeDataM(includeData),
     cryptPluginNameM(cryptPluginName), keyPluginM(keyPlugin), keyEncryptM(keyEncrypt),
-    ServiceThread(frame, action, server, username, password, rolename, charset)
+    ServiceThread(frame, server, username, password, rolename, charset)
 {
     // always use verbose flag
     brfM = (IBPP::BRF)((int)flags | (int)IBPP::brVerbose);

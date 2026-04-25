@@ -177,19 +177,18 @@ void StartupFrame::OnStartButtonClick(wxCommandEvent& WXUNUSED(event))
     flags |= getDatabaseMode();
 
 
-    startThread(std::make_unique<StartupThread>(this, "",
+    startThread(std::make_unique<StartupThread>(this,
         server->getConnectionString(), username, password, rolename, charset,
         database->getPath(), (IBPP::DSM)flags));
 
     updateControls();
 }
 
-StartupThread::StartupThread(StartupFrame* frame,
-    wxString action,
+StartupThread::StartupThread(StartupFrame* frame, 
     wxString server, wxString username, wxString password, 
     wxString rolename, wxString charset, wxString 
     dbfilename, IBPP::DSM flags)
-    :ShutdownStartupThread(frame, action, server, username, password,
+    :ShutdownStartupThread(frame, server, username, password,
         rolename, charset, dbfilename, flags)
 {
 }
