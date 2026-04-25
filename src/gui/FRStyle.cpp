@@ -187,17 +187,19 @@ void FRStyle::write2Element(wxXmlNode* element)
 
 wxFont FRStyle::getFont()
 {
-    // The XML style defines fontSize as a string and may leave it empty
-    // (parsed as STYLE_NOT_USED == -1). Passing a negative size to
-    // wxFontInfo produces a barely-readable tiny font on macOS — pick the
-    // system default font size instead so labels and grid cells stay
-    // legible. Same goes for an empty fontName.
+    // Most theme XMLs specify fontSize="10" (a Notepad++ heritage), and
+    // some leave it empty (parsed as STYLE_NOT_USED == -1). Both render
+    // as barely-readable tiny text on Retina / hi-DPI displays where the
+    // platform UI font is 13pt+. Treat the XML size as a *minimum*: lift
+    // anything below the system default GUI font size up to the system
+    // size, so labels and editor text stay legible. Users who want a
+    // larger code font (15pt, 18pt, ...) still get exactly what they
+    // asked for.
+    wxFont sysFont = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
+    int sysSize = sysFont.GetPointSize();
     int size = getFontSize();
-    if (size <= 0)
-    {
-        wxFont sys = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
-        size = sys.GetPointSize();
-    }
+    if (size <= 0 || size < sysSize)
+        size = sysSize;
     wxFontInfo fontInfo(size);
 
     if (!getFontName().IsEmpty())
