@@ -357,25 +357,47 @@ void DatabaseRegistrationDialog::setDatabase(DatabasePtr db)
     */
     text_ctrl_name->SetValue(databaseM->getName_());
     text_ctrl_dbpath->SetValue(databaseM->getPath());
-    // Issue #451: pre-fill the username with the universally-default
-    // SYSDBA when the database has no saved value yet. We deliberately
-    // do NOT pre-fill the password — modern Firebird installs (FB 2+ on
-    // Posix, FB 3+ on Windows) prompt for an admin password during setup,
-    // so the legacy "masterkey" default is rarely correct anymore.
+    // Issues #238 + #451: read default username / charset / role from
+    // config so the user does not have to retype them for every new
+    // registration; the SYSDBA fallback covers the universal-default
+    // case when no preference has been set. Saved-per-database values
+    // still take precedence.
+    //
+    // Only apply defaults to NEW registrations. The database path is the
+    // load-bearing field — it is empty for a fresh "Register existing
+    // database" / "Create new database" / "Connect as" dialog and non-
+    // empty when editing a saved entry. Without this gate, opening an
+    // existing entry that intentionally has an empty username (e.g.
+    // trusted-auth) would silently rewrite it to the configured default
+    // on the next Save.
+    bool isNewRegistration = databaseM->getPath().IsEmpty();
+
     wxString savedUsername = databaseM->getUsername();
-    if (savedUsername.IsEmpty())
-        savedUsername = "SYSDBA";
+    if (isNewRegistration && savedUsername.IsEmpty())
+        savedUsername = config().get("databaseDefaultUsername", wxString("SYSDBA"));
     text_ctrl_username->SetValue(savedUsername);
     text_ctrl_password->SetValue(databaseM->getDecryptedPassword());
-    text_ctrl_role->SetValue(databaseM->getRole());
+    wxString savedRole = databaseM->getRole();
+    if (isNewRegistration && savedRole.IsEmpty())
+        savedRole = config().get("databaseDefaultRole", wxString());
+    text_ctrl_role->SetValue(savedRole);
     text_ctrl_keydata->SetValue(databaseM->getCryptKeyData());
     /*
     * Todo: Implement FB library per conexion
     text_ctrl_library->SetValue(databaseM->getClientLibrary());
     */
     wxString charset(databaseM->getConnectionCharset());
-    if (charset.empty())
-        charset = "NONE";
+    if (charset.IsEmpty())
+    {
+        // For a new registration, prefer the user-configured default
+        // (which itself defaults to "NONE"). For an existing entry with
+        // an empty stored charset, preserve the original UI behaviour
+        // of showing "NONE" so the combobox isn't blank — that was the
+        // visible default before the configurable default existed.
+        charset = isNewRegistration
+            ? config().get("databaseDefaultCharset", wxString("NONE"))
+            : wxString("NONE");
+    }
     combobox_charset->SetValue(charset);
     if (createM)
         suggestDefaultPageSizeByServerVersion();
