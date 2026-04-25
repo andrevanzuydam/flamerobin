@@ -138,18 +138,31 @@ void HtmlTemplateProcessor::applyDarkModeIfNeeded(wxString& html)
     // text color via the first <body...> tag so all unstyled text inherits
     // a light foreground. font color="white" cells (header rows) keep
     // their explicit color since attribute beats inheritance.
-    int bodyStart = html.Find("<body");
-    if (bodyStart != wxNOT_FOUND)
+    //
+    // HTML attribute names are case-insensitive, and external templates
+    // (the user manual, license viewer) may use mixed casing. Use the
+    // wxString::Find overload that takes a case-sensitivity flag — that
+    // searches in place rather than copying the document, which matters
+    // for multi-MB files.
+    int rawBodyStart = html.Find(wxT("<body"), false /* caseSensitive */);
+    if (rawBodyStart != wxNOT_FOUND)
     {
-        int bodyEnd = html.find('>', bodyStart);
-        if (bodyEnd != wxNOT_FOUND)
+        wxString::size_type bodyStart =
+            static_cast<wxString::size_type>(rawBodyStart);
+        wxString::size_type bodyEnd = html.find('>', bodyStart);
+        if (bodyEnd != wxString::npos)
         {
-            // If the existing <body> already specifies text=, leave it
-            // alone; otherwise insert text="#e0e0e0" before the closing >.
+            // Look for an existing text= attribute, but require a
+            // leading separator (' ', '\t' or '\n') so we don't false-
+            // positive on attribute values that contain "text=" as a
+            // substring (e.g. <body class="main-text-area">).
             wxString bodyTag = html.Mid(bodyStart, bodyEnd - bodyStart + 1);
-            if (bodyTag.Lower().Find("text=") == wxNOT_FOUND)
+            wxString lowerTag = bodyTag.Lower();
+            if (lowerTag.Find(wxT(" text=")) == wxNOT_FOUND
+                && lowerTag.Find(wxT("\ttext=")) == wxNOT_FOUND
+                && lowerTag.Find(wxT("\ntext=")) == wxNOT_FOUND)
             {
-                html.insert(bodyEnd, " text=\"#e0e0e0\"");
+                html.insert(bodyEnd, wxT(" text=\"#e0e0e0\""));
             }
         }
     }
