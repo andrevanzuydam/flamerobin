@@ -59,6 +59,7 @@ public:
     void OnMenuNewVolatileSQLEditor(wxCommandEvent& event);
     void OnMenuRegisterDatabase(wxCommandEvent& event);
     void OnMenuCloneDatabase(wxCommandEvent& event);
+    void OnMenuMoveDatabaseToServer(wxCommandEvent& event);
     void OnMenuDatabaseRegistrationInfo(wxCommandEvent& event);
     void OnMenuCreateDatabase(wxCommandEvent& event);
     void OnMenuRecreateDatabase(wxCommandEvent& event);
