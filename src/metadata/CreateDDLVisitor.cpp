@@ -35,6 +35,7 @@
 
 #include "core/ProgressIndicator.h"
 #include "metadata/column.h"
+#include "metadata/CharacterSet.h"
 #include "metadata/Collation.h"
 #include "metadata/constraints.h"
 #include "metadata/CreateDDLVisitor.h"
@@ -44,6 +45,7 @@
 #include "metadata/function.h"
 #include "metadata/generator.h"
 #include "metadata/Index.h"
+#include "metadata/IndexDDL.h"
 #include "metadata/package.h"
 #include "metadata/parameter.h"
 #include "metadata/procedure.h"
@@ -154,8 +156,6 @@ void CreateDDLVisitor::visitColumn(Column& c)
         if (d->isSystem())
         {
             preSqlM << d->getDatatypeAsString();
-            if (c.isIdentity())
-                preSqlM << c.getSource(true);
             wxString charset = d->getCharset();
             DatabasePtr db = d->getDatabase();
             if (!charset.IsEmpty())
@@ -171,6 +171,9 @@ void CreateDDLVisitor::visitColumn(Column& c)
     }
     else
         preSqlM <<  c.getSource();  // shouldn't happen
+
+    if (c.isIdentity())
+        preSqlM << c.getSource(true);
 
     wxString defaultValue;
     if (c.getDefault(IgnoreDomainDefault, defaultValue))
@@ -220,6 +223,9 @@ void CreateDDLVisitor::visitDatabase(Database& d)
 
         preSqlM << "/********************* COLLATES **********************/\n\n";
         iterateit<CollationsPtr, Collation>(this, d.getCollations(), progressIndicatorM);
+
+        preSqlM << "/************* CHARACTER SET DEFAULT COLLATIONS *******/\n\n";
+        iterateit<CharacterSetsPtr, CharacterSet>(this, d.getCharacterSets(), progressIndicatorM);
 
         preSqlM << "/********************* ROLES **********************/\n\n";
         iterateit<RolesPtr, Role>(this, d.getRoles(), progressIndicatorM);
@@ -413,8 +419,20 @@ void CreateDDLVisitor::visitUDF(UDF& f)
 void CreateDDLVisitor::visitGenerator(Generator& g)
 {
     preSqlM += "CREATE " + g.getSource() + ";\n";
+
+    // grant usage on [name] to [user/role]
+    const std::vector<Privilege>* priv = g.getPrivileges();
+    if (priv)
+    {
+        for (std::vector<Privilege>::const_iterator ci = priv->begin();
+            ci != priv->end(); ++ci)
+        {
+            grantSqlM += (*ci).getSql() + "\n";
+        }
+    }
+
     postSqlM << getCommentOn(g);
-    sqlM = preSqlM + postSqlM;
+    sqlM = preSqlM + postSqlM + grantSqlM;
 }
 
 void CreateDDLVisitor::visitIndex(Index& i)
@@ -426,23 +444,15 @@ void CreateDDLVisitor::visitIndex(Index& i)
         preSqlM += "UNIQUE ";
     if (i.getIndexType() == Index::itDescending)
         preSqlM += "DESCENDING ";
-    preSqlM += "INDEX " + i.getQuotedName() + " ON " /*+ t.getQuotedName()*/;
-    wxString expre = i.getExpression();
-    if (!expre.IsEmpty())
-        preSqlM += " COMPUTED BY " + expre;
-    else
+    preSqlM += "INDEX " + i.getQuotedName() + " ON " + i.getParent()->getQuotedName();
+    std::vector<wxString> quotedSegments;
+    std::vector<wxString>* cols = i.getSegments();
+    for (std::vector<wxString>::const_iterator it = cols->begin(); it != cols->end(); ++it)
     {
-        preSqlM += " (";
-        std::vector<wxString>* cols = i.getSegments();
-        for (std::vector<wxString>::const_iterator it = cols->begin(); it != cols->end(); ++it)
-        {
-            if (it != cols->begin())
-                preSqlM += ",";
-            Identifier id(*it);
-            preSqlM += id.getQuoted();
-        }
-        preSqlM += ")";
+        Identifier id(*it);
+        quotedSegments.push_back(id.getQuoted());
     }
+    preSqlM += buildIndexBodySql(i.getExpression(), quotedSegments, i.getCondition());
     preSqlM += ";\n";
 
 
@@ -638,22 +648,15 @@ void CreateDDLVisitor::visitTable(Table& t)
             if ((*ci).getIndexType() == Index::itDescending)
                 postSqlM += "DESCENDING ";
             postSqlM += "INDEX " + (*ci).getQuotedName() + " ON " + t.getQuotedName();
-            wxString expre = (*ci).getExpression();
-            if (!expre.IsEmpty())
-                postSqlM += " COMPUTED BY " + expre;
-            else
+            std::vector<wxString> quotedSegments;
+            std::vector<wxString>* cols = (*ci).getSegments();
+            for (std::vector<wxString>::const_iterator it = cols->begin(); it != cols->end(); ++it)
             {
-                postSqlM += " (";
-                std::vector<wxString> *cols = (*ci).getSegments();
-                for (std::vector<wxString>::const_iterator it = cols->begin(); it != cols->end(); ++it)
-                {
-                    if (it != cols->begin())
-                        postSqlM += ",";
-                    Identifier id(*it);
-                    postSqlM += id.getQuoted();
-                }
-                postSqlM += ")";
+                Identifier id(*it);
+                quotedSegments.push_back(id.getQuoted());
             }
+            postSqlM += buildIndexBodySql((*ci).getExpression(), quotedSegments,
+                (*ci).getCondition());
             postSqlM += ";\n";
         }
     }
@@ -741,22 +744,15 @@ void CreateDDLVisitor::visitGTTable(GTTable& t)
             if ((*ci).getIndexType() == Index::itDescending)
                 postSqlM += "DESCENDING ";
             postSqlM += "INDEX " + (*ci).getQuotedName() + " ON " + t.getQuotedName();
-            wxString expre = (*ci).getExpression();
-            if (!expre.IsEmpty())
-                postSqlM += " COMPUTED BY " + expre;
-            else
+            std::vector<wxString> quotedSegments;
+            std::vector<wxString>* cols = (*ci).getSegments();
+            for (std::vector<wxString>::const_iterator it = cols->begin(); it != cols->end(); ++it)
             {
-                postSqlM += " (";
-                std::vector<wxString>* cols = (*ci).getSegments();
-                for (std::vector<wxString>::const_iterator it = cols->begin(); it != cols->end(); ++it)
-                {
-                    if (it != cols->begin())
-                        postSqlM += ",";
-                    Identifier id(*it);
-                    postSqlM += id.getQuoted();
-                }
-                postSqlM += ")";
+                Identifier id(*it);
+                quotedSegments.push_back(id.getQuoted());
             }
+            postSqlM += buildIndexBodySql((*ci).getExpression(), quotedSegments,
+                (*ci).getCondition());
             postSqlM += ";\n";
         }
     }
@@ -886,6 +882,16 @@ void CreateDDLVisitor::visitView(View& v)
     sqlM += preSqlM + "\n" + postSqlM + grantSqlM;
 }
 
-void CreateDDLVisitor::visitCharacterSet(CharacterSet&  /*characterset*/)
+void CreateDDLVisitor::visitCharacterSet(CharacterSet& characterset)
 {
+    characterset.ensurePropertiesLoaded();
+    wxString current = characterset.getCollationDefault();
+    wxString original = characterset.getOriginalCollationDefault();
+    if (!current.IsEmpty() && current != original)
+    {
+        Identifier collationId(current);
+        preSqlM += "ALTER CHARACTER SET " + characterset.getQuotedName()
+            + " SET DEFAULT COLLATION " + collationId.getQuoted() + ";\n";
+        sqlM = preSqlM;
+    }
 }

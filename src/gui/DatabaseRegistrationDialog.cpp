@@ -94,6 +94,10 @@ void DatabaseRegistrationDialog::createControls()
 
     label_role = new wxStaticText(getControlsPanel(), -1, _("Role:"));
     text_ctrl_role = new wxTextCtrl(getControlsPanel(), -1, "");
+    label_keydata = new wxStaticText(getControlsPanel(), -1,
+        _("Encryption key data:"));
+    text_ctrl_keydata = new wxTextCtrl(getControlsPanel(),
+        ID_textcontrol_keydata, wxEmptyString);
     /*
     Todo: Implement FB library per conexion
     label_library = new wxStaticText(getControlsPanel(), -1,
@@ -298,6 +302,8 @@ void DatabaseRegistrationDialog::layoutControls()
     sizerControls->Add(combobox_charset, wxGBPosition(4, 1), wxDefaultSpan, wxALIGN_CENTER_VERTICAL | wxEXPAND);
     sizerControls->Add(label_role, wxGBPosition(4, 2), wxDefaultSpan, wxLEFT | wxALIGN_CENTER_VERTICAL, dx);
     sizerControls->Add(text_ctrl_role, wxGBPosition(4, 3), wxDefaultSpan, wxALIGN_CENTER_VERTICAL | wxEXPAND);
+    sizerControls->Add(label_keydata, wxGBPosition(5, 0), wxDefaultSpan, wxALIGN_CENTER_VERTICAL);
+    sizerControls->Add(text_ctrl_keydata, wxGBPosition(5, 1), wxGBSpan(1, 3), wxALIGN_CENTER_VERTICAL | wxEXPAND);
     
     /*
     * Todo: Implement FB library per conexion
@@ -310,10 +316,10 @@ void DatabaseRegistrationDialog::layoutControls()
 
     if (createM)
     {
-        sizerControls->Add(label_pagesize, wxGBPosition(5, 0), wxDefaultSpan, wxALIGN_CENTER_VERTICAL);
-        sizerControls->Add(choice_pagesize, wxGBPosition(5, 1), wxDefaultSpan, wxALIGN_CENTER_VERTICAL | wxEXPAND);
-        sizerControls->Add(label_dialect, wxGBPosition(5, 2), wxDefaultSpan, wxLEFT | wxALIGN_CENTER_VERTICAL, dx);
-        sizerControls->Add(choice_dialect, wxGBPosition(5, 3), wxDefaultSpan, wxALIGN_CENTER_VERTICAL | wxEXPAND);
+        sizerControls->Add(label_pagesize, wxGBPosition(6, 0), wxDefaultSpan, wxALIGN_CENTER_VERTICAL);
+        sizerControls->Add(choice_pagesize, wxGBPosition(6, 1), wxDefaultSpan, wxALIGN_CENTER_VERTICAL | wxEXPAND);
+        sizerControls->Add(label_dialect, wxGBPosition(6, 2), wxDefaultSpan, wxLEFT | wxALIGN_CENTER_VERTICAL, dx);
+        sizerControls->Add(choice_dialect, wxGBPosition(6, 3), wxDefaultSpan, wxALIGN_CENTER_VERTICAL | wxEXPAND);
     }
 
     sizerControls->AddGrowableCol(1);
@@ -354,6 +360,7 @@ void DatabaseRegistrationDialog::setDatabase(DatabasePtr db)
     text_ctrl_username->SetValue(databaseM->getUsername());
     text_ctrl_password->SetValue(databaseM->getDecryptedPassword());
     text_ctrl_role->SetValue(databaseM->getRole());
+    text_ctrl_keydata->SetValue(databaseM->getCryptKeyData());
     /*
     * Todo: Implement FB library per conexion
     text_ctrl_library->SetValue(databaseM->getClientLibrary());
@@ -362,6 +369,8 @@ void DatabaseRegistrationDialog::setDatabase(DatabasePtr db)
     if (charset.empty())
         charset = "NONE";
     combobox_charset->SetValue(charset);
+    if (createM)
+        suggestDefaultPageSizeByServerVersion();
     // see whether the database has an empty or default name; knowing that will be
     // useful to keep the name in sync when other attributes change.
     updateIsDefaultDatabaseName();
@@ -375,6 +384,7 @@ void DatabaseRegistrationDialog::setDatabase(DatabasePtr db)
     choice_authentication->Enable(!connectAsM && !isConnected);
     combobox_charset->Enable(!isConnected);
     text_ctrl_role->SetEditable(!isConnected);
+    text_ctrl_keydata->SetEditable(!isConnected);
     if (connectAsM)
         button_ok->SetLabel(_("Connect"));
     else
@@ -386,6 +396,42 @@ void DatabaseRegistrationDialog::setDatabase(DatabasePtr db)
     updateAuthenticationMode();
     updateButtons();
     updateColors();
+}
+
+void DatabaseRegistrationDialog::suggestDefaultPageSizeByServerVersion()
+{
+    if (choice_pagesize->GetSelection() != 0)
+        return;
+
+    int pageSize = getSuggestedPageSizeByServerVersion();
+    if (pageSize <= 0)
+        return;
+
+    choice_pagesize->SetStringSelection(wxString::Format("%d", pageSize));
+}
+
+int DatabaseRegistrationDialog::getSuggestedPageSizeByServerVersion() const
+{
+    if (!databaseM)
+        return 0;
+
+    ServerPtr server(databaseM->getServer());
+    if (!server)
+        return 0;
+
+    try
+    {
+        IBPP::Service service;
+        if (!server->getService(service, nullptr, false))
+            return 0;
+
+        return service->versionIsHigherOrEqualTo(3, 0) ? 8192 : 4096;
+    }
+    catch (...)
+    {
+        // Version detection is best-effort; keep existing default on failure.
+    }
+    return 0;
 }
 
 void DatabaseRegistrationDialog::updateAuthenticationMode()
@@ -432,17 +478,66 @@ BEGIN_EVENT_TABLE(DatabaseRegistrationDialog, BaseDialog)
     EVT_TEXT(DatabaseRegistrationDialog::ID_textcontrol_dbpath, DatabaseRegistrationDialog::OnSettingsChange)
     EVT_TEXT(DatabaseRegistrationDialog::ID_textcontrol_name, DatabaseRegistrationDialog::OnNameChange)
     EVT_TEXT(DatabaseRegistrationDialog::ID_textcontrol_username, DatabaseRegistrationDialog::OnSettingsChange)
+    EVT_TEXT(DatabaseRegistrationDialog::ID_textcontrol_keydata, DatabaseRegistrationDialog::OnSettingsChange)
     EVT_CHOICE(DatabaseRegistrationDialog::ID_choice_authentication, DatabaseRegistrationDialog::OnAuthenticationChange)
     EVT_TEXT(DatabaseRegistrationDialog::ID_textcontrol_library, DatabaseRegistrationDialog::OnSettingsChange)
 END_EVENT_TABLE()
 
+// `*DatabaseRegistrationDialog*` on: `OnBrowseButtonClick`
 void DatabaseRegistrationDialog::OnBrowseButtonClick(wxCommandEvent& WXUNUSED(event))
 {
-    wxString path = ::wxFileSelector(_("Select database file"), "", "", "",
+    // Style, for whether we are creating or registering a database
+    long style = createM
+        ? wxFD_SAVE | wxFD_OVERWRITE_PROMPT
+        : wxFD_OPEN | wxFD_FILE_MUST_EXIST;
+
+    // Dialog title
+    wxString dialogTitle = createM
+        ? _("Create new database")
+        : _("Register existing database");
+
+    // Show the file selection dialog
+    wxString path = ::wxFileSelector(
+        dialogTitle,
+        "", "", "",
         _("Firebird database files (*.fdb, *.gdb)|*.fdb;*.gdb|All files (*.*)|*.*"),
-        wxFD_OPEN, this);
-    if (!path.empty())
+        style,
+        this
+    );
+
+
+    // If the user selected a path
+    if (!path.IsEmpty())
+    {
+        wxFileName fileName(path);
+
+
+        // Ensure the directory exists
+        if (!fileName.DirExists())
+        {
+            wxLogError(wxString::Format(
+                _("The specified directory does not exist: %s"),
+                fileName.GetPath()
+            ));
+
+            return;
+        }
+
+        // For creation mode, verify that the directory is writable
+        if ((createM) && (!wxFileName::IsDirWritable(fileName.GetPath())))
+        {
+            wxLogError(wxString::Format(
+                _("Write access denied: the specified directory is not writable: %s"),
+                fileName.GetPath()
+            ));
+
+            return;
+        }
+
+
+        // Update the UI with the selected path
         text_ctrl_dbpath->SetValue(path);
+    }
 }
 
 void DatabaseRegistrationDialog::OnBrowseLibraryButtonClick(wxCommandEvent& WXUNUSED(event))
@@ -477,6 +572,7 @@ void DatabaseRegistrationDialog::OnOkButtonClick(wxCommandEvent& WXUNUSED(event)
     databaseM->setPath(text_ctrl_dbpath->GetValue());
     databaseM->setUsername(text_ctrl_username->GetValue());
     databaseM->setEncryptedPassword(text_ctrl_password->GetValue());
+    databaseM->setCryptKeyData(text_ctrl_keydata->GetValue());
     /*
     * Todo: Implement FB library per conexion
     databaseM->setClientLibrary(text_ctrl_library->GetValue());
@@ -540,4 +636,3 @@ void DatabaseRegistrationDialog::OnAuthenticationChange(
         updateColors();
     }
 }
-

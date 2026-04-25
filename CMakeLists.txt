@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
 project(flamerobin)
 
 # Don't allow in-source builds. Keeps things nice and tidy
@@ -34,10 +34,11 @@ if (WIN32)
 		endif ()
 	endif()
 	set(wxWidgets_ROOT_DIR ${WXDIR})
+	# On Windows we want the static build of wxWidgets
+	set(wxWidgets_USE_STATIC ON)
 endif (WIN32)
 
-# We want the wx static build, and Unicode support
-set(wxWidgets_USE_STATIC ON)
+# Unicode support is always required
 set(wxWidgets_USE_UNICODE ON)
 
 # Find the wxWidgets library
@@ -71,6 +72,7 @@ list(APPEND SOURCE_LIST
         ${SOURCEDIR}/statementHistory.cpp
         ${SOURCEDIR}/config/Config.cpp
         ${SOURCEDIR}/config/DatabaseConfig.cpp
+        ${SOURCEDIR}/config/LocaleManager.cpp
         ${SOURCEDIR}/config/LocalSettings.cpp
         ${SOURCEDIR}/core/ArtProvider.cpp
         ${SOURCEDIR}/core/CodeTemplateProcessor.cpp
@@ -153,6 +155,7 @@ list(APPEND SOURCE_LIST
         ${SOURCEDIR}/metadata/function.cpp
         ${SOURCEDIR}/metadata/generator.cpp
         ${SOURCEDIR}/metadata/Index.cpp
+        ${SOURCEDIR}/metadata/IndexDDL.cpp
         ${SOURCEDIR}/metadata/metadataitem.cpp
         ${SOURCEDIR}/metadata/MetadataItemCreateStatementVisitor.cpp
         ${SOURCEDIR}/metadata/MetadataItemDescriptionVisitor.cpp
@@ -191,6 +194,7 @@ list(APPEND HEADER_LIST
         ${SOURCEDIR}/statementHistory.h
         ${SOURCEDIR}/config/Config.h
         ${SOURCEDIR}/config/DatabaseConfig.h
+        ${SOURCEDIR}/config/LocaleManager.h
         ${SOURCEDIR}/config/LocalSettings.h
         ${SOURCEDIR}/core/ArtProvider.h
         ${SOURCEDIR}/core/CodeTemplateProcessor.h
@@ -276,6 +280,7 @@ list(APPEND HEADER_LIST
         ${SOURCEDIR}/metadata/function.h
         ${SOURCEDIR}/metadata/generator.h
         ${SOURCEDIR}/metadata/Index.h
+        ${SOURCEDIR}/metadata/IndexDDL.h
         ${SOURCEDIR}/metadata/MetadataClasses.h
         ${SOURCEDIR}/metadata/metadataitem.h
         ${SOURCEDIR}/metadata/MetadataItemCreateStatementVisitor.h
@@ -435,8 +440,24 @@ endif (UNIX AND NOT APPLE)
 if(APPLE)
 	# MacOS specific stuff
 	add_definitions(-DIBPP_DARWIN)
-	list(APPEND FR_LIBS -lfbclient)
-        list(APPEND FR_LIBS -L${CMAKE_SOURCE_DIR}/firebird-libs)
+        set(FR_FIREBIRD_HINT_DIRS
+                "/Library/Frameworks/Firebird.framework/Resources/lib"
+                "/Library/Frameworks/Firebird.framework/Libraries"
+                "/opt/homebrew/lib"
+                "/usr/local/lib"
+        )
+        find_library(FBCLIENT_LIBRARY
+                NAMES fbclient libfbclient
+                HINTS ${FR_FIREBIRD_HINT_DIRS}
+        )
+        if (FBCLIENT_LIBRARY)
+                message(STATUS "Using Firebird client library: ${FBCLIENT_LIBRARY}")
+                list(APPEND FR_LIBS ${FBCLIENT_LIBRARY})
+                get_filename_component(FBCLIENT_LIBRARY_DIR ${FBCLIENT_LIBRARY} DIRECTORY)
+                list(APPEND FR_RPATHS ${FBCLIENT_LIBRARY_DIR})
+        else ()
+                message(FATAL_ERROR "Could not find libfbclient on macOS. Set CMAKE_PREFIX_PATH or FBLIB to a valid Firebird client location.")
+        endif ()
         
     list(APPEND SOURCE_LIST
         ${SOURCEDIR}/gui/mac/StyleGuideMAC.cpp
@@ -542,6 +563,77 @@ endif (APPLE)
 
 target_link_libraries(${PROJECT_NAME} IBPP ${wxWidgets_LIBRARIES} ${FR_LIBS})
 
+enable_testing()
+add_executable(index_ddl_test
+    ${SOURCEDIR}/metadata/IndexDDLTest.cpp
+    ${SOURCEDIR}/metadata/IndexDDL.cpp
+)
+target_link_libraries(index_ddl_test ${wxWidgets_LIBRARIES})
+add_test(NAME index_ddl_test COMMAND index_ddl_test)
+
+# Common source files shared by the SQL parsing tests.
+# TestStringUtils.cpp provides a minimal wx2std() stub so that FRError.cpp
+# links without dragging in the full Database / IBPP symbol chain.
+set(SQL_TEST_COMMON_SOURCES
+    ${SOURCEDIR}/sql/SqlTokenizer.cpp
+    ${SOURCEDIR}/config/Config.cpp
+    ${SOURCEDIR}/core/Observer.cpp
+    ${SOURCEDIR}/core/Subject.cpp
+    ${SOURCEDIR}/core/FRError.cpp
+    ${SOURCEDIR}/sql/TestStringUtils.cpp
+)
+
+add_executable(multi_statement_test
+    ${SOURCEDIR}/sql/MultiStatementTest.cpp
+    ${SOURCEDIR}/sql/MultiStatement.cpp
+    ${SQL_TEST_COMMON_SOURCES}
+)
+target_link_libraries(multi_statement_test ${wxWidgets_LIBRARIES})
+add_test(NAME multi_statement_test COMMAND multi_statement_test)
+
+add_executable(sql_tokenizer_test
+    ${SOURCEDIR}/sql/SqlTokenizerTest.cpp
+    ${SQL_TEST_COMMON_SOURCES}
+)
+target_link_libraries(sql_tokenizer_test ${wxWidgets_LIBRARIES})
+add_test(NAME sql_tokenizer_test COMMAND sql_tokenizer_test)
+
+add_executable(ibpp_row_metadata_test
+    ${SOURCEDIR}/ibpp/RowMetadataTest.cpp
+)
+target_link_libraries(ibpp_row_metadata_test IBPP ${FR_LIBS})
+add_test(NAME ibpp_row_metadata_test COMMAND ibpp_row_metadata_test)
+
+# Regression test for issue #78 (EXECUTE BLOCK / Selectable SP emitting
+# internal RDB$xxx domain names instead of actual datatypes).
+# Tests the system-domain classification predicate (name prefix check) that
+# drives Parameter::getTypeOf() and Procedure::getAlterSql().
+add_executable(domain_is_system_test
+    ${SOURCEDIR}/metadata/DomainIsSystemTest.cpp
+)
+target_link_libraries(domain_is_system_test ${wxWidgets_LIBRARIES})
+add_test(NAME domain_is_system_test COMMAND domain_is_system_test)
+
+# Regression test for issue #436 (fatal crash when dropping a trigger).
+# Tests the Observer/Subject subjectRemoved() contract: observers must
+# receive subjectRemoved() when a Subject is destroyed so they can clear
+# any raw pointer they hold to it.
+add_executable(subject_observer_test
+    ${SOURCEDIR}/core/SubjectObserverTest.cpp
+    ${SOURCEDIR}/core/Observer.cpp
+    ${SOURCEDIR}/core/Subject.cpp
+)
+target_link_libraries(subject_observer_test ${wxWidgets_LIBRARIES})
+add_test(NAME subject_observer_test COMMAND subject_observer_test)
+if (APPLE)
+        set_target_properties(${PROJECT_NAME} PROPERTIES
+                BUILD_WITH_INSTALL_RPATH FALSE
+                BUILD_RPATH "${FR_RPATHS}"
+                INSTALL_RPATH "${FR_RPATHS}"
+                MACOSX_RPATH TRUE
+        )
+endif (APPLE)
+
 
 #--------------------------------------
 # Install
@@ -582,9 +674,9 @@ if (UNIX AND NOT APPLE)
 endif (UNIX AND NOT APPLE)
 
 if (APPLE)
-        install(
-                TARGETS flamerobin
-                DESTINATION /Applications
-        )
+	install(
+		TARGETS flamerobin
+		BUNDLE DESTINATION /Applications
+		RUNTIME DESTINATION bin
+	)
 endif (APPLE)
-

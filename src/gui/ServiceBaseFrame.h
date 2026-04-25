@@ -61,11 +61,9 @@ protected:
         ID_button_start
     };
 
-    wxString action = "Backup";
     wxArrayString msgsM;
     wxArrayInt msgKindsM;
     bool verboseMsgsM;
-
 
     DatabasePtr getDatabase() const;
 
@@ -122,16 +120,17 @@ private:
 
 class ServiceThread : public wxThread {
 public:
-    ServiceThread(ServiceBaseFrame* frame, wxString action, wxString server,
+    ServiceThread(ServiceBaseFrame* frame, wxString server,
         wxString username, wxString password, wxString rolename, 
         wxString charset
     );
 
-    void* Entry() override;
-    void OnExit() override;
+    virtual void* Entry();
+    virtual void OnExit();
 
 protected:
         virtual void Execute(IBPP::Service ) = 0;
+        virtual wxString getOperationName() const;
 private:
     ServiceBaseFrame* frameM;
     wxString serverM;
@@ -139,7 +138,6 @@ private:
     wxString passwordM;
     wxString rolenameM;
     wxString charsetM;
-    wxString actionM;
 
     void logError(wxString& msg);
     void logImportant(wxString& msg);

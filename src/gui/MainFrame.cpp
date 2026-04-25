@@ -234,7 +234,7 @@ void MainFrame::buildMainMenu()
     newMenu->Append(Cmds::Menu_CreateDomain, _("&Domain"));
     newMenu->Append(Cmds::Menu_CreateException, _("&Exception"));
     newMenu->Append(Cmds::Menu_CreateFunction, _("&Function"));
-    newMenu->Append(Cmds::Menu_CreateGenerator, _("&Generator"));
+    newMenu->Append(Cmds::Menu_CreateGenerator, _("&Sequence"));
     newMenu->Append(Cmds::Menu_CreateGTTTable, _("Global &Temporary"));
     newMenu->Append(Cmds::Menu_CreateIndex, _("&Index"));
     newMenu->Append(Cmds::Menu_CreatePackage, _("P&ackage"));
@@ -740,9 +740,11 @@ void MainFrame::doBeforeDestroy()
     wxSafeYield();
     treeMainM->Thaw();
 
-    #if !defined(__WXOSX_COCOA__)
+#if defined(__WXMSW__) || defined(__WXGTK__)
+    // Flush() is only implemented on MSW and GTK platforms in wxWidgets
+    // According to wxWidgets documentation, calling it on unsupported platforms causes assertion failure
     wxTheClipboard->Flush();
-    #endif
+#endif
 }
 
 void MainFrame::OnMenuQuit(wxCommandEvent& WXUNUSED(event))
@@ -757,7 +759,7 @@ void MainFrame::OnMenuAbout(wxCommandEvent& WXUNUSED(event))
 
 void MainFrame::OnMenuManual(wxCommandEvent& WXUNUSED(event))
 {
-    showUrl("http://flamerobin.org/dokuwiki/wiki/manual");
+    showUrl("https://github.com/mariuz/flamerobin/wiki/Flamerobin-Manual");
 }
 
 void MainFrame::OnMenuRelNotes(wxCommandEvent& WXUNUSED(event))
@@ -1996,4 +1998,3 @@ bool MainFrame::handleURI(URI& uri)
     else
         return false;
 }
-

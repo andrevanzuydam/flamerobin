@@ -73,7 +73,7 @@ namespace InsertOptions
         "CURRENT_TIMESTAMP",
         "CURRENT_USER",
         wxTRANSLATE("File..."),
-        wxTRANSLATE("Generator...")
+        wxTRANSLATE("Sequence...")
     };
     typedef enum { ioRegular = 0, ioNull, ioSkip, ioDefault, ioHex,
         ioDate, ioTime, ioTimestamp, ioUser, ioFile, ioGenerator
@@ -155,8 +155,6 @@ InsertDialog::InsertDialog(wxWindow* parent, const wxString& tableName,
     :BaseDialog(parent, -1, wxEmptyString), tableNameM(tableName), bufferM(0),
     gridTableM(gridTable), statementM(st), databaseM(db)
 {
-    localSetM.setDataBaseLenguage();
-
     DataGridTable::FieldSet fields;
     gridTable->getFields(tableName, fields);
 
@@ -697,8 +695,8 @@ void InsertDialog::OnGridCellChange(wxGridEvent& event)
             {
                 as.Add((*it)->getQuotedName());
             }
-            wxString s(::wxGetSingleChoice(_("Select a generator"),
-                _("Generator"), as, this));
+            wxString s(::wxGetSingleChoice(_("Select a sequence"),
+                _("Sequence"), as, this));
             setStringOption(columnsM[row], s);
         }
     }

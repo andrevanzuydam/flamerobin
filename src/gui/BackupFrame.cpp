@@ -99,7 +99,7 @@ void BackupFrame::layoutControls()
     
     BackupRestoreBaseFrame::layoutControls();
 
-    auto* sizerChecks = new wxGridSizer(3, 3,
+    wxGridSizer* sizerChecks = new wxGridSizer(3, 3,
         styleguide().getCheckboxSpacing(),
         styleguide().getUnrelatedControlMargin(wxHORIZONTAL));
     sizerChecks->Add(checkbox_checksum, 0, wxEXPAND);
@@ -114,7 +114,7 @@ void BackupFrame::layoutControls()
 
 
 
-    auto* sizerPanelV = new wxBoxSizer(wxVERTICAL);
+    wxBoxSizer* sizerPanelV = new wxBoxSizer(wxVERTICAL);
     sizerPanelV->Add(0, styleguide().getFrameMargin(wxTOP));
     sizerPanelV->Add(sizerFilename, 0, wxEXPAND);
     sizerPanelV->Add(0, styleguide().getRelatedControlMargin(wxVERTICAL));
@@ -125,13 +125,13 @@ void BackupFrame::layoutControls()
     sizerPanelV->Add(sizerButtons, 0, wxEXPAND);
     sizerPanelV->Add(0, styleguide().getRelatedControlMargin(wxVERTICAL));
 
-    auto* sizerPanelH = new wxBoxSizer(wxHORIZONTAL);
+    wxBoxSizer* sizerPanelH = new wxBoxSizer(wxHORIZONTAL);
     sizerPanelH->Add(styleguide().getFrameMargin(wxLEFT), 0);
     sizerPanelH->Add(sizerPanelV, 1, wxEXPAND);
     sizerPanelH->Add(styleguide().getFrameMargin(wxRIGHT), 0);
     panel_controls->SetSizerAndFit(sizerPanelH);
 
-    auto* sizerMain = new wxBoxSizer(wxVERTICAL);
+    wxBoxSizer* sizerMain = new wxBoxSizer(wxVERTICAL);
     sizerMain->Add(panel_controls, 0, wxEXPAND);
     sizerMain->Add(text_ctrl_log, 1, wxEXPAND);
 
@@ -266,7 +266,6 @@ void BackupFrame::OnBrowseButtonClick(wxCommandEvent& WXUNUSED(event))
 
 void BackupFrame::OnStartButtonClick(wxCommandEvent& WXUNUSED(event))
 {
-    action = "Backup";
     verboseMsgsM = checkbox_showlog->IsChecked() || spinctrl_showlogInterval->GetValue() > 0;
     clearLog();
 
@@ -318,7 +317,7 @@ void BackupFrame::OnStartButtonClick(wxCommandEvent& WXUNUSED(event))
     if (checkbox_staticpagewrite->IsChecked())
         flags |= (int)IBPP::brstatistics_pagewrites;
 
-    startThread(std::make_unique<BackupThread>(this, action,
+    startThread(std::make_unique<BackupThread>(this,
         server->getConnectionString(), username, password, rolename, charset,
         database->getPath(), text_ctrl_filename->GetValue(),
         (IBPP::BRF)flags, spinctrl_showlogInterval->GetValue(), spinctrl_parallelworkers->GetValue(),
@@ -331,14 +330,13 @@ void BackupFrame::OnStartButtonClick(wxCommandEvent& WXUNUSED(event))
 }
 
 BackupThread::BackupThread(BackupFrame* frame,
-    wxString action,
     wxString server, wxString username, wxString password,
     wxString rolename, wxString charset, wxString dbfilename,
     wxString bkfilename, IBPP::BRF flags, int interval, int parallel,
     wxString skipData, wxString includeData, wxString cryptPluginName,
     wxString keyPlugin, wxString keyEncrypt)
     :factorM(0),
-    BackupRestoreThread(frame, action, server, username, password,rolename, charset,
+    BackupRestoreThread(frame, server, username, password,rolename, charset, 
         dbfilename,bkfilename, flags, interval, parallel, skipData, includeData, cryptPluginName,
         keyPlugin, keyEncrypt)
 {
@@ -351,4 +349,9 @@ void BackupThread::Execute(IBPP::Service svc)
         wx2std(keyEncryptM), wx2std(skipDataM), wx2std(includeDataM), 
         intervalM, parallelM
     );
+}
+
+wxString BackupThread::getOperationName() const
+{
+    return _("backup");
 }

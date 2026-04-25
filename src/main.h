@@ -25,15 +25,12 @@
 #define MAIN_H
 
 
-#include "config/LocalSettings.h"
+#include "config/LocaleManager.h"
 class MainFrame;
 
 class Application: public wxApp
 {
 private:
-    // format local settings 
-    // TODO: multilingual
-    LocalSettings* localSetM;
     // Open databases whose file names were given as command line parameters
     wxArrayString cmdlineParamsM;
     void openDatabasesFromParams(MainFrame* frFrame);

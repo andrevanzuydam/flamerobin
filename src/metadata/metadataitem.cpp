@@ -58,11 +58,6 @@ void initializeLockCount(MetadataItemPtr item, unsigned count)
     initializeLockCount(item.get(), count);
 }
 
-template<>
-ObjectWithHandle<MetadataItem>::HandleMap ObjectWithHandle<MetadataItem>::handleMap = ObjectWithHandle<MetadataItem>::HandleMap();
-template<>
-ObjectWithHandle<MetadataItem>::Handle ObjectWithHandle<MetadataItem>::nextHandle = 0;
-
 MetadataItem::MetadataItem()
     : Subject(), typeM(ntUnknown), parentM(0), metadataIdM(-1), childrenLoadedM(lsNotLoaded),
         descriptionLoadedM(lsNotLoaded), propertiesLoadedM(lsNotLoaded)
@@ -119,7 +114,7 @@ wxString getNameOfType(NodeType type)
         case ntView:         return ("VIEW");
         case ntProcedure:    return ("PROCEDURE");
         case ntDMLTrigger:   return ("TRIGGER");
-        case ntGenerator:    return ("GENERATOR");
+        case ntGenerator:    return ("SEQUENCE");
         case ntFunctionSQL:  return ("FUNCTIONSQL");
         case ntUDF:          return ("UDF");
         case ntDomain:       return ("DOMAIN");
@@ -147,7 +142,7 @@ NodeType getTypeByName(const wxString& name)
         return ntProcedure;
     else if (name == "TRIGGER")
         return ntDMLTrigger;
-    else if (name == "GENERATOR")
+    else if (name == "SEQUENCE" || name == "GENERATOR")
         return ntGenerator;
     else if (name == "FUNCTIONSQL")
         return ntFunctionSQL;
@@ -329,7 +324,7 @@ void MetadataItem::getDependencies(std::vector<Dependency>& list,
 
     int mytype = -1;            // map DBH type to RDB$DEPENDENT TYPE
     NodeType dep_types[] = {    ntTable,    ntView,     ntTrigger,  ntUnknown,  ntUnknown,
-                                ntProcedure,ntUnknown,  ntException,ntUnknown,  ntUnknown,
+                                ntProcedure,ntUnknown,  ntException,ntUnknown,  ntDomain,
                                 ntUnknown,  ntUnknown,  ntUnknown,  ntUnknown,  ntGenerator,
                                 ntFunctionSQL, ntUnknown,  ntUnknown,  ntUnknown,  ntPackage
     };
@@ -337,8 +332,8 @@ void MetadataItem::getDependencies(std::vector<Dependency>& list,
     for (int i = 0; i < type_count; i++)
         if (typeM == dep_types[i])
             mytype = i;
-    // system tables should be treated as tables
-    if (typeM == ntSysTable)
+    // system tables and global temporary tables should be treated as tables
+    if (typeM == ntSysTable || typeM == ntGTT)
         mytype = 0;
     if (typeM == ntDBTrigger || typeM == ntDDLTrigger || typeM == ntDMLTrigger)
         mytype = 2;
@@ -368,7 +363,7 @@ void MetadataItem::getDependencies(std::vector<Dependency>& list,
         " from RDB$DEPENDENCIES \n "
         " where RDB$" + o1 + "_TYPE in (?,?) and RDB$" + o1 + "_NAME = ? \n ";
     int params = 1;
-    if ((typeM == ntTable || typeM == ntSysTable || typeM == ntView) && ofObject)  // get deps for computed columns
+    if ((typeM == ntTable || typeM == ntSysTable || typeM == ntGTT || typeM == ntView) && ofObject)  // get deps for computed columns
     {                                                       // view needed to bind with generators
         sql += " union  \n"
             " SELECT DISTINCT d.rdb$depended_on_type, d.rdb$depended_on_name, d.rdb$field_name \n"
@@ -401,7 +396,7 @@ void MetadataItem::getDependencies(std::vector<Dependency>& list,
     }
     // views can depend on other views as well
     // we might need to add procedures here one day when Firebird gains support for it
-    if (!ofObject && (typeM == ntView || typeM == ntTable || typeM == ntSysTable))
+    if (!ofObject && (typeM == ntView || typeM == ntTable || typeM == ntSysTable || typeM == ntGTT))
     {
         sql += " union \n"
             " select distinct cast(0 as smallint), f.RDB$RELATION_NAME, f.RDB$BASE_FIELD \n"
@@ -444,6 +439,11 @@ void MetadataItem::getDependencies(std::vector<Dependency>& list,
         MetadataItem* current = d->findByNameAndType(t, objname);
         if (!current)
         {
+            if (!current && t == ntDomain)
+            {
+                // Dependencies can refer to both user and system domains.
+                current = d->findByNameAndType(ntSysDomain, objname);
+            }
             if (t == ntTable) {
                 // maybe it's a view masked as table
                 current = d->findByNameAndType(ntView, objname);

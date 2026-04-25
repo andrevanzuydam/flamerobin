@@ -1,5 +1,4 @@
 src/revisioninfo.h
-flamerobin_vs2010.*
 flamerobin.ncb
 flamerobin*.suo
 Debug
@@ -8,7 +7,6 @@ ipch
 bcc*
 gcc*
 vc*
-.bakefile_gen.state
 *.opensdf
 *.sdf
 *.user
@@ -26,6 +24,7 @@ flamerobin.includes
 .deps/
 .pch/
 build*/
+Build/
 *.db
 # Visual Studio 2015 cache/options directory
 .vs/
@@ -35,3 +34,8 @@ xcuserdata
 project.xcworkspace
 /firebird-libs/
 /cmake-build-debug/
+# Build artifacts
+config.log
+config.status
+configure~
+_codeql_detected_source_root

@@ -24,6 +24,9 @@ Optional:
 
 -- Notes
 
+FlameRobin is currently compiled as C++14 (`CMAKE_CXX_STANDARD=14`).
+Please keep code changes compatible with C++14.
+
 FR must be built with the same settings for debug/release etc.  as the
 wxWidgets library (Unicode build is required). Failing to do so will usually
 lead to compile or link errors. This does not apply completely to Linux/GCC
@@ -120,7 +123,7 @@ file will be set to ignore those directories.
 Assumes a 'project' dir in you home directory, change to suit
 
  1. Setup the tools and libs needed:
-    $ sudo apt-get install build-essential git cmake firebird-dev libwxgtk3.0-gtk3-dev
+    $ sudo apt-get install build-essential git cmake firebird-dev libwxgtk3.2-dev
     (wxWidgets version may change in the future, update to match)
  2. $ cd ~/project
  3. $ git clone https://github.com/mariuz/flamerobin.git
@@ -146,9 +149,44 @@ build for 'release':
 -- Mac OS --
 ------------
 
-Add dependencies for compilation, also requires firebird install for relevant MAC OS, you may need to compile Firebird for ARM if using M processor
+Assumes Homebrew (https://brew.sh/) is installed.
+Tested on Apple Silicon (arm64) with macOS 26.3.1.
 
-brew install wxwidgets
-brew install boost
+-- Firebird client library
 
-CLion editor from Jetbrains seems to work out of the box for compiling
+FlameRobin requires the Firebird client library (libfbclient) at build
+and runtime.
+
+    System Firebird install (https://www.firebirdsql.org/):
+    The installer places the framework at:
+    /Library/Frameworks/Firebird.framework/
+    CMake will find it automatically.
+
+
+-- Build steps
+
+ 1. Install the required tools and libraries:
+    $ brew install cmake wxwidgets
+ 2. $ cd ~/projects
+ 3. $ git clone https://github.com/mariuz/flamerobin.git
+ 4. $ cd flamerobin
+ 5. $ mkdir build
+ 6. $ cd build
+ 7. $ cmake -DCMAKE_PREFIX_PATH="$(brew --prefix)" ..
+    CMake will locate libfbclient automatically from the Firebird
+    framework or Homebrew. If your Firebird client is in a custom
+    location, set CMAKE_PREFIX_PATH or FBLIB accordingly:
+    $ cmake -DCMAKE_PREFIX_PATH="/path/to/firebird" ..
+ 8. $ make
+ 9. To run FlameRobin directly from the build directory:
+    $ open flamerobin.app
+
+-- Install to /Applications (optional)
+
+    $ sudo cmake --install .
+
+-- Notes
+
+ * The app bundle embeds an rpath pointing to where libfbclient was
+   found at build time, so the app runs without DYLD_LIBRARY_PATH.
+ * If you move or reinstall Firebird after building, rebuild from step 7.

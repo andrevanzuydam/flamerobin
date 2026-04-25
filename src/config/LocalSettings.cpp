@@ -37,28 +37,13 @@
 
 LocalSettings::LocalSettings()
 {
-    wxLocale* locale;
-    locale = new wxLocale();
-    if (config().getUseLocalConfig())
-        locale->Init(wxLANGUAGE_DEFAULT);
-    else
-        locale->Init(wxLANGUAGE_ENGLISH);
 }
 
 LocalSettings::~LocalSettings()
 {
-    wxLocale* locale;
-    locale = new wxLocale();
-    if (config().getUseLocalConfig())
-        locale->Init(wxLANGUAGE_DEFAULT);
-    else
-        locale->Init(wxLANGUAGE_ENGLISH);
 }
 
 
 void LocalSettings::setDataBaseLenguage()
 {
-    wxLocale* locale;
-    locale = new wxLocale();
-    locale->Init(wxLANGUAGE_ENGLISH);
 }

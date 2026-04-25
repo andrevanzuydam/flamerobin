@@ -123,10 +123,10 @@ wxString MetadataItemCreateStatementVisitor::getCreateUserStatement()
 wxString MetadataItemCreateStatementVisitor::getCreateGeneratorStatement()
 {
     StatementBuilder sb;
-    sb << kwCREATE << ' ' << kwGENERATOR << " name;"
+    sb << kwCREATE << " SEQUENCE name;"
         << StatementBuilder::NewLine
-        << kwSET << ' ' << kwGENERATOR << " name " << kwTO
-        << " value;" << StatementBuilder::NewLine;
+        << "ALTER SEQUENCE name RESTART WITH value;"
+        << StatementBuilder::NewLine;
     return sb;
 }
 
@@ -299,7 +299,8 @@ wxString MetadataItemCreateStatementVisitor::getCreateIndexStatement()
     StatementBuilder sb;
     sb << kwCREATE << " [" << kwUNIQUE << "] [" << kwASCENDING << "[ENDING]] | [" << kwDESCENDING << "[ENDING]]"
         << kwINDEX << " index_name " << kwON << " table_name "
-        << "{ (<col> [, <col> ...]) | " << kwCOMPUTED << " " << kwBY << "(expression) }";
+        << "{ (<col> [, <col> ...]) | " << kwCOMPUTED << " " << kwBY << "(expression) } "
+        << "[" << kwWHERE << " search_condition]";
     return sb;
 }
 
@@ -404,4 +405,3 @@ wxString MetadataItemCreateStatementVisitor::getStatement() const
 {
     return statementM;
 }
-

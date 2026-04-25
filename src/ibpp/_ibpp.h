@@ -390,6 +390,7 @@ typedef void        ISC_EXPORT proto_encode_timestamp (void *,
 //  FB3+ / get master-interface (fb_get_master_interface)
 //
 typedef Firebird::IMaster* ISC_EXPORT proto_get_master_interface();
+typedef ISC_STATUS ISC_EXPORT proto_database_crypt_callback(ISC_STATUS*, void*);
 
 //
 //  Internal binding structure to the FBCLIENT DLL
@@ -474,6 +475,7 @@ struct FBCLIENT
     //proto_encode_timestamp*           m_encode_timestamp;
 
     proto_get_master_interface*     m_get_master_interface;
+    proto_database_crypt_callback*  m_database_crypt_callback;
 
     // Constructor (No need for a specific destructor)
     FBCLIENT()
@@ -852,6 +854,7 @@ class DatabaseImpl : public IBPP::IDatabase
     std::string mRoleName;      // Role used for the duration of the connection
     std::string mCharSet;       // Character Set used for the connection
     std::string mCreateParams;  // Other parameters (creation only)
+    std::string mCryptKeyData;  // Crypt key callback data
 
     int mDialect;                           // 1 if IB5, 1 or 3 if IB6/FB1
     std::vector<TransactionImpl*> mTransactions;// Table of Transaction*
@@ -878,7 +881,8 @@ public:
     DatabaseImpl(const std::string& ServerName, const std::string& DatabaseName,
                 const std::string& UserName, const std::string& UserPassword,
                 const std::string& RoleName, const std::string& CharSet,
-                const std::string& CreateParams);
+                const std::string& CreateParams,
+                const std::string& CryptKeyData = "");
     ~DatabaseImpl();
     FBCLIENT getGDS() const { return gds; };
 
@@ -992,6 +996,9 @@ private:
     std::vector<int16_t> mInt16s;   // Temporary storage for 16 bits
     std::vector<char> mBools;       // Temporary storage for Bools
     std::vector<std::string> mStrings;  // Temporary storage for Strings
+    std::vector<std::string> mColumnNames;   // Null-terminated copies of column names
+    std::vector<std::string> mColumnAliases; // Null-terminated copies of aliases
+    std::vector<std::string> mColumnTables;  // Null-terminated copies of relation names
     std::vector<bool> mUpdated;     // Which columns where updated (Set()) ?
 
     int mDialect;                   // Related database dialect
@@ -1116,9 +1123,11 @@ private:
     bool mCursorOpened;         // dsql_set_cursor_name was called
     IBPP::STT mType;            // Type de requète
     std::string mSql;           // Last SQL statement prepared or executed
+    std::string mSqlWithParams; // Last SQL statement with parameters replaced by '?'
 
     // Internal Methods
     void CursorFree();
+    void ResetCursorState();    // Reset state flags after transaction end
 
 public:
     // Properties and Attributes Access Methods
@@ -1505,6 +1514,12 @@ class fbIntfClass
 
         static fbIntfClass* getInstance();
 };
+
+/* Map a Firebird timezone ID to its printable name (e.g. "Europe/Prague" or
+ * "+02:00").  Returns true and fills 'name' on success; returns false when
+ * the Firebird client interface is not available or the id cannot be decoded.
+ * Implemented in fbinterfaces.cpp */
+bool getTimezoneNameById(int tzId, std::string& name);
 
 }   // namespace ibpp_internal
 

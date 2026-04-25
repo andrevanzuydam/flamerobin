@@ -262,6 +262,14 @@ wxString DataGridTable::getCellValueForInsert(int row, int col)
         return "NULL";
     // return quoted text, but escape embedded quotes
     wxString s(rowsM.getFieldValue(row, col));
+    // Normalize decimal separator for SQL: Firebird always uses dot.
+    // If the display value uses comma as decimal separator (locale-
+    // dependent formatting) and has no dot, replace comma with dot.
+    // Note: values with both comma and dot (e.g. "1,234.56") are left
+    // unchanged as the dot is already the decimal separator.
+    if (rowsM.isColumnNumeric(col)
+            && s.Contains(",") && !s.Contains("."))
+        s.Replace(",", ".");
     s.Replace("'", "''");
     return "'" + s + "'";
 }
@@ -563,13 +571,6 @@ void DataGridTable::importBlobFile(const wxString& filename, int row, int col,
     ProgressIndicator *pi)
 {
     rowsM.importBlobFile(filename, row, col, pi);
-
-    // tell the grid it's done
-    if (GetView())
-    {
-        wxGridTableMessage msg(this, wxGRIDTABLE_REQUEST_VIEW_GET_VALUES);
-        GetView()->ProcessTableMessage(msg);
-    }
 }
 
 void DataGridTable::exportBlobFile(const wxString& filename, int row, int col,

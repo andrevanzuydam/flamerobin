@@ -34,6 +34,7 @@
 #include <wx/fontmap.h>
 
 #include <algorithm>
+#include <exception>
 #include <functional>
 
 #include <thread>
@@ -67,6 +68,7 @@
 #include "metadata/view.h"
 #include "sql/SqlStatement.h"
 #include "sql/SqlTokenizer.h"
+#include "ibpp/_ibpp.h"
 
 // Credentials class
 void Credentials::setCharset(const wxString& value)
@@ -89,6 +91,11 @@ void Credentials::setRole(const wxString& value)
     roleM = value;
 }
 
+void Credentials::setCryptKeyData(const wxString& value)
+{
+    cryptKeyDataM = value;
+}
+
 wxString Credentials::getCharset() const
 {
     return charsetM;
@@ -107,6 +114,11 @@ wxString Credentials::getPassword() const
 wxString Credentials::getRole() const
 {
     return roleM;
+}
+
+wxString Credentials::getCryptKeyData() const
+{
+    return cryptKeyDataM;
 }
 
 int DatabaseInfo::getBuffers() const
@@ -299,6 +311,7 @@ Database::Database()
 
 Database::~Database()
 {
+    clearTimezones(true);
     resetCredentials();
 }
 
@@ -307,6 +320,7 @@ void Database::prepareTemporaryCredentials()
     resetCredentials();
     connectionCredentialsM = new Credentials;
     connectionCredentialsM->setCharset(credentialsM.getCharset()); // default to database charset
+    connectionCredentialsM->setCryptKeyData(credentialsM.getCryptKeyData());
 }
 
 void Database::resetCredentials()
@@ -591,19 +605,16 @@ MetadataItem* Database::findByNameAndType(NodeType nt, const wxString& name)
             break;
         case ntTrigger:
         case ntDMLTrigger:
-            if ( item = DMLtriggersM->findByName(name).get() ) {
+            if ((item = DMLtriggersM->findByName(name).get())) {
                 return item;
-                break;
             }
         case ntDBTrigger:
-            if ( item = DBTriggersM->findByName(name).get()) {
+            if ((item = DBTriggersM->findByName(name).get())) {
                 return item;
-                break;
             }
         case ntDDLTrigger:
-            if (item = DDLTriggersM->findByName(name).get()) {
+            if ((item = DDLTriggersM->findByName(name).get())) {
                 return item;
-                break;
             }
         case ntProcedure:
             return proceduresM->findByName(name).get();
@@ -1053,7 +1064,7 @@ void Database::create(int pagesize, int dialect)
         (useUserNamePwd ? wx2std(getUsername()) : ""),
         (useUserNamePwd ? wx2std(getDecryptedPassword()) : ""),
         "", wx2std(charset), wx2std(extra_params),
-        wx2std(getClientLibrary())
+        wx2std(getClientLibrary()), wx2std(getCryptKeyData())
     );
     db->Create(dialect);
 }
@@ -1100,7 +1111,7 @@ void Database::connect(const wxString& password, ProgressIndicator* indicator)
                 (useUserNamePwd ? wx2std(getUsername()) : ""),
                 (useUserNamePwd ? wx2std(password) : ""),
                 wx2std(getRole()), wx2std(getConnectionCharset()), 
-                "", wx2std(getClientLibrary())
+                "", wx2std(getClientLibrary()), wx2std(getCryptKeyData())
             );
             db->Connect();  // As standard, will block for 180 seconds or until connected
             return db;
@@ -1347,13 +1358,13 @@ void Database::loadCollections(ProgressIndicator* progressIndicator)
     pih.init(_("system domains"), collectionCount, 17);
     sysDomainsM->load(progressIndicator);
 
-    pih.init(_("indices"), collectionCount, 18);
+    pih.init(_("indexes"), collectionCount, 18);
     indicesM->load(progressIndicator);
 
     pih.init(_("system indices"), collectionCount, 19);
     sysIndicesM->load(progressIndicator);
 
-    pih.init(_("indices"), collectionCount, 20);
+    pih.init(_("indexes"), collectionCount, 20);
     usrIndicesM->load(progressIndicator);
 
     pih.init(_("CharacterSet"), collectionCount, 21);
@@ -1468,6 +1479,7 @@ void Database::setDisconnected()
     usrIndicesM.reset();
     characterSetsM.reset();
     collationsM.reset();
+    clearTimezones(true);
 
     if (config().get("HideDisconnectedDatabases", false))
         getServer()->notifyObservers();
@@ -1890,6 +1902,14 @@ wxString Database::getRole() const
         return credentialsM.getRole();
 }
 
+wxString Database::getCryptKeyData() const
+{
+    if (connectionCredentialsM)
+        return connectionCredentialsM->getCryptKeyData();
+    else
+        return credentialsM.getCryptKeyData();
+}
+
 IBPP::Database& Database::getIBPPDatabase()
 {
     return databaseM;
@@ -1962,6 +1982,14 @@ void Database::setRole(const wxString& value)
         connectionCredentialsM->setRole(value);
     else
         credentialsM.setRole(value);
+}
+
+void Database::setCryptKeyData(const wxString& value)
+{
+    if (connectionCredentialsM)
+        connectionCredentialsM->setCryptKeyData(value);
+    else
+        credentialsM.setCryptKeyData(value);
 }
 
 const wxString Database::getTypeName() const
@@ -2243,7 +2271,12 @@ void Database::loadDefaultTimezone()
 
     // RDB$TIME_ZONES is available on Firebird 4 (ODS Ver 13) or higher
     if (!getInfo().getODSVersionIsHigherOrEqualTo(13, 0))
+    {
+        std::lock_guard<std::mutex> lock(timezoneDataMutexM);
+        defaultTimezoneM.name.clear();
+        defaultTimezoneM.id = 0;
         return;
+    }
 
     IBPP::Statement& st1 = loader->getStatement(
         "select z.RDB$TIME_ZONE_ID, "
@@ -2256,8 +2289,25 @@ void Database::loadDefaultTimezone()
     st1->Get(1, tzId);
     st1->Get(2, tzName);
 
+    std::lock_guard<std::mutex> lock(timezoneDataMutexM);
     defaultTimezoneM.id = tzId;
     defaultTimezoneM.name = std2wxIdentifier(tzName, converter);
+}
+
+void Database::clearTimezones(bool clearDefaultTimezone)
+{
+    std::lock_guard<std::mutex> lock(timezoneDataMutexM);
+    for (auto* tz : timezonesM)
+    {
+        delete tz;
+    }
+    timezonesM.clear();
+    timezonesCacheM.clear();
+    if (clearDefaultTimezone)
+    {
+        defaultTimezoneM.name.clear();
+        defaultTimezoneM.id = 0;
+    }
 }
 
 void Database::loadTimezones()
@@ -2270,7 +2320,10 @@ void Database::loadTimezones()
 
     // RDB$TIME_ZONES is available on Firebird 4 (ODS Ver 13) or higher
     if (!getInfo().getODSVersionIsHigherOrEqualTo(13, 0))
+    {
+        clearTimezones(false);
         return;
+    }
 
     IBPP::Statement& st1 = loader->getStatement(
         "select z.RDB$TIME_ZONE_ID, "
@@ -2278,34 +2331,92 @@ void Database::loadTimezones()
         "from RDB$TIME_ZONES z");
 
     st1->Execute();
+    std::vector<TimezoneInfo*> loadedTimezones;
 
-    while (st1->Fetch())
+    try
     {
-        st1->Get(1, tzId);
-        st1->Get(2, tzName);
+        while (st1->Fetch())
+        {
+            st1->Get(1, tzId);
+            st1->Get(2, tzName);
 
-        tzItm = new TimezoneInfo;
-        tzItm->id = tzId;
-        tzItm->name = std2wxIdentifier(tzName, converter);
-        timezonesM.push_back(tzItm);
+            tzItm = new TimezoneInfo;
+            tzItm->id = tzId;
+            tzItm->name = std2wxIdentifier(tzName, converter);
+            loadedTimezones.push_back(tzItm);
+        }
+    }
+    catch (...)
+    {
+        for (auto* tz : loadedTimezones)
+        {
+            delete tz;
+        }
+        throw;
+    }
+
+    std::vector<TimezoneInfo*> oldTimezones;
+    {
+        std::lock_guard<std::mutex> lock(timezoneDataMutexM);
+        oldTimezones.swap(timezonesM);
+        timezonesM.swap(loadedTimezones);
+        timezonesCacheM.clear();
+    }
+    for (auto* tz : oldTimezones)
+    {
+        delete tz;
     }
 }
 
 TimezoneInfo Database::getDefaultTimezone()
 {
     loadDefaultTimezone();
+    std::lock_guard<std::mutex> lock(timezoneDataMutexM);
     return defaultTimezoneM;
 }
 
 wxString Database::getTimezoneName(int timezone)
 {
-    std::vector<TimezoneInfo*>::iterator it;
-    for (it = timezonesM.begin(); it != timezonesM.end(); it++)
+    // Check the decoded-name cache first (avoids both vector scan and API call
+    // on repeated lookups of the same ID, e.g. during grid rendering).
     {
-        if ((*it)->id != timezone)
-            continue;
-        return (*it)->name;
+        std::lock_guard<std::mutex> lock(timezoneDataMutexM);
+        auto cacheIt = timezonesCacheM.find(timezone);
+        if (cacheIt != timezonesCacheM.end())
+            return cacheIt->second;
+
+        // Look up in metadata loaded from RDB$TIME_ZONES.
+        for (const auto* tz : timezonesM)
+        {
+            if (tz->id != timezone)
+                continue;
+            timezonesCacheM[timezone] = tz->name;
+            return tz->name;
+        }
     }
+
+    // Fallback: ask the Firebird client to decode the ID (handles offset-based
+    // timezone IDs that are not present in RDB$TIME_ZONES, e.g. "+02:00").
+    try
+    {
+        std::string tzName;
+        if (ibpp_internals::getTimezoneNameById(timezone, tzName))
+        {
+            wxString result = wxString::FromUTF8(tzName.c_str());
+            std::lock_guard<std::mutex> lock(timezoneDataMutexM);
+            timezonesCacheM[timezone] = result;
+            return result;
+        }
+    }
+    catch (const std::exception& ex)
+    {
+        wxLogDebug("Could not decode time zone id %d: %s", timezone, ex.what());
+    }
+    catch (...)
+    {
+        wxLogDebug("Could not decode time zone id %d", timezone);
+    }
+
     // not found
     return wxString::Format("TZ %d", timezone);
 }

@@ -30,6 +30,7 @@
     #include "wx/wx.h"
 #endif
 
+#include <wx/wupdlock.h>
 #include <wx/artprov.h>
 #include <wx/dnd.h>
 #include <wx/file.h>
@@ -294,6 +295,22 @@ void SqlEditor::markText(int start, int end)
     centerCaret(false);
 }
 
+void SqlEditor::highlightText(int start, int end)
+{
+    SetIndicatorCurrent(0);
+    IndicatorSetStyle(0, wxSTC_INDIC_ROUNDBOX);
+    //TODO: If you don't like blue, please change to use global style configuration and send your patch
+    IndicatorSetForeground(0, wxColour(wxT("blue")));
+    IndicatorFillRange(start, end - start);
+}
+
+void SqlEditor::clearHighlights()
+{
+    SetIndicatorCurrent(0);
+    IndicatorClearRange(0, GetTextLength());
+    Refresh();
+}
+
 void SqlEditor::setChars(bool firebirdIdentifierOnly)
 {
     SetKeyWords(0, SqlTokenizer::getKeywordsString(SqlTokenizer::kwLowerCase));
@@ -329,6 +346,7 @@ void SqlEditor::setup()
     SetMarginType(0, 1);              // set margin type to linenumbers
     */
     SetCaretLineVisible(true);
+    SetAdditionalSelectionTyping(true);
 
     SetMargins(0, 0);
     SetMarginWidth(FR_LINENUMBERNARGIN, 40);
@@ -474,8 +492,13 @@ void SqlEditor::setFont()
 
 void SqlEditor::setupStyles()
 {
+    // 1) Set STYLE_DEFAULT (fg/bg) from the theme.
     stylerManager().assignGlobal(this);
+    // 2) Propagate STYLE_DEFAULT to every token ID (fixes unspecified tokens
+    //    like identifiers that would otherwise inherit system dark defaults).
     StyleClearAll();
+    // 3) Re-apply global styles that StyleClearAll just wiped (brace highlight, etc.).
+    stylerManager().assignGlobal(this);
     stylerManager().assignLexer(this);
     SetLexer(wxSTC_LEX_SQL);
     stylerManager().assignMargin(this);
@@ -543,6 +566,7 @@ ExecuteSqlFrame::ExecuteSqlFrame(wxWindow* WXUNUSED(parent), int id,
     transactionLockResolutionM = config().get("transactionLockResolution", true) ? IBPP::lrWait : IBPP::lrNoWait;
     transactionAccessModeM = config().get("transactionAccessMode", false) ? IBPP::amRead : IBPP::amWrite;
     showStatisticsM = config().get("SQLEditorShowStats", true);
+    highlightWordText = config().get("highlightWordText", true);
 
     timerBlobEditorM.SetOwner(this, TIMER_ID_UPDATE_BLOB);
 
@@ -606,6 +630,24 @@ ExecuteSqlFrame::ExecuteSqlFrame(wxWindow* WXUNUSED(parent), int id,
 Database* ExecuteSqlFrame::getDatabase() const
 {
     return databaseM;
+}
+
+bool ExecuteSqlFrame::isTransactionStarted()
+{
+    if (transactionM == 0)
+        return false;
+    try
+    {
+        return transactionM->Started();
+    }
+    catch (IBPP::LogicException&)
+    {
+        transactionM = 0;
+        statementM = 0;
+        inTransaction(false);
+        executedStatementsM.clear();
+        return false;
+    }
 }
 
 
@@ -863,7 +905,7 @@ bool ExecuteSqlFrame::doCanClose()
         saveFile = res == wxYES;
     }
 
-    if (transactionM != 0 && transactionM->Started())
+    if (isTransactionStarted())
     {
         Raise();
         int res = showQuestionDialog(this, _("Do you want to commit the active transaction?"),
@@ -1076,6 +1118,38 @@ void ExecuteSqlFrame::OnSqlEditUpdateUI(wxStyledTextEvent& WXUNUSED(event))
     }
     else
         styled_text_ctrl_sql->BraceBadLight(wxSTC_INVALID_POSITION);    // remove light
+
+    // Word highlight feature
+    if (!highlightWordText || inHighlightUpdateM)
+        return;
+
+    struct ReentrancyGuard {
+        bool& m_flag;
+        ReentrancyGuard(bool& flag) : m_flag(flag) { m_flag = true; }
+        ~ReentrancyGuard() { m_flag = false; }
+    };
+    ReentrancyGuard guard(inHighlightUpdateM);
+
+    int wordStartPos = styled_text_ctrl_sql->WordStartPosition(p, true);
+    int wordEndPos = styled_text_ctrl_sql->WordEndPosition(p, true);
+
+    if (styled_text_ctrl_sql->hasSelection())
+    {
+        highlightOccurrences(styled_text_ctrl_sql->GetSelectedText());
+    }
+    else if (highlightWordUnderCaret
+        && p != wordStartPos && p != wordEndPos && wordStartPos != wordEndPos)
+    {
+        wxString wordUnderCaret = styled_text_ctrl_sql->GetTextRange(wordStartPos, wordEndPos);
+        if (!wordUnderCaret.IsEmpty())
+            highlightOccurrences(wordUnderCaret);
+        else
+            styled_text_ctrl_sql->clearHighlights();
+    }
+    else
+    {
+        styled_text_ctrl_sql->clearHighlights();
+    }
 }
 
 //! returns true if there is a word in "wordlist" that starts with "word"
@@ -1267,6 +1341,13 @@ void ExecuteSqlFrame::OnKeyDown(wxKeyEvent& event)
         styled_text_ctrl_sql->find(false);
         return;
     }
+    
+    if (event.ControlDown() && 
+        (event.GetKeyCode() == '/' || event.GetKeyCode() == WXK_NUMPAD_DIVIDE))
+    {
+        toggleBlockComment();
+        return;
+    }
 
     if (wxWindow::FindFocus() == styled_text_ctrl_sql)
     {
@@ -1392,7 +1473,7 @@ void ExecuteSqlFrame::OnMenuSaveOrSaveAs(wxCommandEvent& event)
     if (useAlternativeSaveMode)
     {
         wxFile file(filename, wxFile::write);
-        if (saveStatus = file.Write(styled_text_ctrl_sql->GetValue()))
+        if ((saveStatus = file.Write(styled_text_ctrl_sql->GetValue())))
         {
             file.Close();
             styled_text_ctrl_sql->SetModified(false);
@@ -1456,6 +1537,8 @@ void ExecuteSqlFrame::OnMenuCopy(wxCommandEvent& WXUNUSED(event))
 {
     if (viewModeM == vmEditor)
         styled_text_ctrl_sql->Copy();
+    else if (viewModeM == vmLogCtrl)
+        styled_text_ctrl_stats->Copy();
     else if (viewModeM == vmGrid)
         grid_data->copyToClipboard(false);
 }
@@ -1473,6 +1556,8 @@ void ExecuteSqlFrame::OnMenuUpdateCopy(wxUpdateUIEvent& event)
     bool enableCmd = false;
     if (viewModeM == vmEditor)
         enableCmd = styled_text_ctrl_sql->hasSelection();
+    else if (viewModeM == vmLogCtrl)
+        enableCmd = styled_text_ctrl_stats->GetSelectionStart() != styled_text_ctrl_stats->GetSelectionEnd();
     else if (viewModeM == vmGrid)
         enableCmd = grid_data->getDataGridTable() && grid_data->GetNumberRows();
     event.Enable(enableCmd);
@@ -2367,7 +2452,7 @@ bool ExecuteSqlFrame::execute(wxString sql, const wxString& terminator,
     while (tk.nextToken());
     if (!hasStatements)
     {
-        log(_("Parsed statement: " + sql), ttSql);
+        log(_("Parsed statement: ") + sql, ttSql);
         log(_("Empty statement detected, bailing out..."));
         return true;
     }
@@ -2418,14 +2503,14 @@ bool ExecuteSqlFrame::execute(wxString sql, const wxString& terminator,
     long waitForParameterInputTime = 0;
     try
     {
-        if (transactionM == 0 || !transactionM->Started())
+        if (!isTransactionStarted())
         {
             log(_("Starting transaction..."));
 
             // fix the IBPP::LogicException "No Database is attached."
             // which happens after a database reconnect
             // (this action detaches the database from all its transactions)
-            if (transactionM != 0 && !transactionM->Started())
+            if (transactionM != 0 && !isTransactionStarted())
             {
                 try
                 {
@@ -2464,7 +2549,7 @@ bool ExecuteSqlFrame::execute(wxString sql, const wxString& terminator,
         }
         grid_data->ClearGrid(); // statement object will be invalidated, so clear the grid
         statementM = IBPP::StatementFactory(databaseM->getIBPPDatabase(), transactionM);
-        log(_("Preparing statement: " + sql), ttSql);
+        log(_("Preparing statement: ") + sql, ttSql);
         sae.scroll();
         {
             wxStopWatch sw;
@@ -2653,7 +2738,7 @@ void ExecuteSqlFrame::OnMenuTransactionIsolationLevel(wxCommandEvent& event)
     else if (event.GetId() == Cmds::Query_TransactionReadDirty)
         transactionIsolationLevelM = IBPP::ilReadDirty;
 
-    wxCHECK_RET(transactionM == 0 || !transactionM->Started(),
+    wxCHECK_RET(!isTransactionStarted(),
         "Can't change transaction isolation level while started");
     transactionM = 0;
 }
@@ -2661,7 +2746,7 @@ void ExecuteSqlFrame::OnMenuTransactionIsolationLevel(wxCommandEvent& event)
 void ExecuteSqlFrame::OnMenuUpdateTransactionIsolationLevel(
     wxUpdateUIEvent& event)
 {
-    event.Enable(transactionM == 0 || !transactionM->Started());
+    event.Enable(!isTransactionStarted());
     if (event.GetId() == Cmds::Query_TransactionConcurrency)
         event.Check(transactionIsolationLevelM == IBPP::ilConcurrency);
     else if (event.GetId() == Cmds::Query_TransactionConsistency)
@@ -2677,7 +2762,7 @@ void ExecuteSqlFrame::OnMenuTransactionLockResolution(wxCommandEvent& event)
     transactionLockResolutionM =
         event.IsChecked() ? IBPP::lrWait : IBPP::lrNoWait;
 
-    wxCHECK_RET(transactionM == 0 || !transactionM->Started(),
+    wxCHECK_RET(!isTransactionStarted(),
         "Can't change transaction lock resolution while started");
     transactionM = 0;
 }
@@ -2685,7 +2770,7 @@ void ExecuteSqlFrame::OnMenuTransactionLockResolution(wxCommandEvent& event)
 void ExecuteSqlFrame::OnMenuUpdateTransactionLockResolution(
     wxUpdateUIEvent& event)
 {
-    event.Enable(transactionM == 0 || !transactionM->Started());
+    event.Enable(!isTransactionStarted());
     event.Check(transactionLockResolutionM == IBPP::lrWait);
 }
 
@@ -2693,14 +2778,14 @@ void ExecuteSqlFrame::OnMenuTransactionReadOnly(wxCommandEvent& event)
 {
     transactionAccessModeM = event.IsChecked() ? IBPP::amRead : IBPP::amWrite;
 
-    wxCHECK_RET(transactionM == 0 || !transactionM->Started(),
+    wxCHECK_RET(!isTransactionStarted(),
         "Can't change transaction access mode while started");
     transactionM = 0;
 }
 
 void ExecuteSqlFrame::OnMenuUpdateTransactionReadOnly(wxUpdateUIEvent& event)
 {
-    event.Enable(transactionM == 0 || !transactionM->Started());
+    event.Enable(!isTransactionStarted());
     event.Check(transactionAccessModeM == IBPP::amRead);
 }
 
@@ -2717,7 +2802,7 @@ void ExecuteSqlFrame::OnMenuCommit(wxCommandEvent& WXUNUSED(event))
 
 bool ExecuteSqlFrame::commitTransaction()
 {
-    if (transactionM == 0 || !transactionM->Started())    // check
+    if (!isTransactionStarted())    // check
     {
         inTransaction(false);
         return true;    // nothing to commit, but it wasn't error
@@ -2734,7 +2819,8 @@ bool ExecuteSqlFrame::commitTransaction()
         sae.scroll();
         {
             wxStopWatch sw;
-            statementM->Close();
+            if (statementM != 0)
+                statementM->Close();
             transactionM->Commit();
             log(wxString::Format(_("Transaction committed (elapsed time: %s)."),
                 millisToTimeString(sw.Time()).c_str()));
@@ -2780,6 +2866,14 @@ bool ExecuteSqlFrame::commitTransaction()
             return true;
         }
     }
+    catch (IBPP::LogicException&)
+    {
+        transactionM = 0;
+        statementM = 0;
+        inTransaction(false);
+        executedStatementsM.clear();
+        return true;
+    }
     catch (IBPP::Exception &e)
     {
         splitScreen();
@@ -2812,7 +2906,7 @@ void ExecuteSqlFrame::OnMenuRollback(wxCommandEvent& WXUNUSED(event))
 
 bool ExecuteSqlFrame::rollbackTransaction()
 {
-    if (transactionM == 0 || !transactionM->Started())    // check
+    if (!isTransactionStarted())    // check
     {
         executedStatementsM.clear();
         inTransaction(false);
@@ -2829,7 +2923,8 @@ bool ExecuteSqlFrame::rollbackTransaction()
         sae.scroll();
         {
             wxStopWatch sw;
-            statementM->Close();
+            if (statementM != 0)
+                statementM->Close();
             transactionM->Rollback();
             log(wxString::Format(_("Transaction rolled back (elapsed time: %s)."),
                 millisToTimeString(sw.Time()).c_str()));
@@ -2844,6 +2939,14 @@ bool ExecuteSqlFrame::rollbackTransaction()
             Close();
             return true;
         }
+    }
+    catch (IBPP::LogicException&)
+    {
+        transactionM = 0;
+        statementM = 0;
+        inTransaction(false);
+        executedStatementsM.clear();
+        return true;
     }
     catch (IBPP::Exception &e)
     {
@@ -2862,6 +2965,83 @@ bool ExecuteSqlFrame::rollbackTransaction()
     notebook_1->SetSelection(0);
     setViewMode(vmEditor);
     return true;
+}
+
+
+void ExecuteSqlFrame::toggleBlockComment()
+{
+    // Get the current selection
+    int start = styled_text_ctrl_sql->GetSelectionStart();
+    int end = styled_text_ctrl_sql->GetSelectionEnd();
+
+    int startLine = styled_text_ctrl_sql->LineFromPosition(start);
+    int endLine = styled_text_ctrl_sql->LineFromPosition(end);
+
+    // If the selection ends at the start of the next line, don't include that line
+    if (end > start && styled_text_ctrl_sql->PositionFromLine(endLine) == end)
+        endLine--;
+
+    // Determine if we should uncomment (if first selected line starts with "--")
+    bool shouldUncomment = false;
+    wxString firstLine = styled_text_ctrl_sql->GetLine(startLine);
+    if (firstLine.Trim(false).StartsWith("--"))
+        shouldUncomment = true;
+
+    styled_text_ctrl_sql->BeginUndoAction();
+
+    for (int line = startLine; line <= endLine; ++line)
+    {
+        int lineStart = styled_text_ctrl_sql->PositionFromLine(line);
+        int lineEnd = styled_text_ctrl_sql->GetLineEndPosition(line);
+        wxString text = styled_text_ctrl_sql->GetTextRange(lineStart, lineEnd);
+
+        if (shouldUncomment)
+        {
+            // Remove '--' if present at the beginning (ignoring leading whitespace)
+            wxString trimmed = text.Trim(false);
+            if (trimmed.StartsWith("--"))
+            {
+                int idx = text.Find("--");
+                if (idx != wxNOT_FOUND)
+                {
+                    styled_text_ctrl_sql->SetTargetStart(lineStart + idx);
+                    styled_text_ctrl_sql->SetTargetEnd(lineStart + idx + 2);
+                    styled_text_ctrl_sql->ReplaceTarget("");
+                }
+            }
+        }
+        else
+        {
+            styled_text_ctrl_sql->InsertText(lineStart, "--");
+        }
+    }
+
+    styled_text_ctrl_sql->EndUndoAction();
+
+    // Move caret or restore selection
+    if (startLine == endLine)
+    {
+        // Single line: move caret to the start of the next line
+        int nextLine = startLine + 1;
+        int lineCount = styled_text_ctrl_sql->GetLineCount();
+        int newPos;
+        if (nextLine < lineCount)
+            newPos = styled_text_ctrl_sql->PositionFromLine(nextLine);
+        else
+            newPos = styled_text_ctrl_sql->GetLength();
+        styled_text_ctrl_sql->SetSelection(newPos, newPos);
+    }
+    else
+    {
+        // Multi-line: keep selection over the affected block
+        int maxLine = styled_text_ctrl_sql->GetLineCount() - 1;
+        if (endLine > maxLine)
+            endLine = maxLine;
+
+        int newStart = styled_text_ctrl_sql->PositionFromLine(startLine);
+        int newEnd = styled_text_ctrl_sql->GetLineEndPosition(endLine);
+        styled_text_ctrl_sql->SetSelection(newStart, newEnd);
+    }
 }
 
 void ExecuteSqlFrame::OnMenuUpdateGridInsertRow(wxUpdateUIEvent& event)
@@ -3037,7 +3217,9 @@ void ExecuteSqlFrame::setKeywords()
     // we can also make ExecuteSqlFrame observer of YTables/YViews/... objects
     // so it can reload this list if something changes
 
-    wxArrayString as(SqlTokenizer::getKeywords(SqlTokenizer::kwDefaultCase));
+    const DatabaseInfo& dbInfo(databaseM->getInfo());
+    wxArrayString as(SqlTokenizer::getKeywords(SqlTokenizer::kwDefaultCase,
+        dbInfo.getODS(), dbInfo.getODSMinor()));
 
     // get list od database objects' names
     std::vector<Identifier> v;
@@ -3096,6 +3278,37 @@ void ExecuteSqlFrame::doWriteConfigSettings(const wxString& prefix) const
 const wxRect ExecuteSqlFrame::getDefaultRect() const
 {
     return wxRect(-1, -1, 528, 486);
+}
+
+void ExecuteSqlFrame::highlightOccurrences(const wxString& word)
+{
+    if (word.find_first_not_of(wxT(" \t\r\n")) == wxString::npos)
+        return;
+
+    wxWindowUpdateLocker noUpdates(styled_text_ctrl_sql);
+    styled_text_ctrl_sql->clearHighlights();
+
+    int start = 0;
+    int end = 0;
+    int textLen = styled_text_ctrl_sql->GetTextLength();
+    int flags = (highlightWordTextMatchCase ? wxSTC_FIND_MATCHCASE : 0);
+    int occurrenceCount = 0;
+
+    while (end < textLen)
+    {
+        start = styled_text_ctrl_sql->FindText(end, textLen, word, flags);
+        if (start == wxSTC_INVALID_POSITION)
+            break;
+        end = start + word.length();
+        if (end <= start) // safety: prevent infinite loop
+            break;
+        styled_text_ctrl_sql->highlightText(start, end);
+        occurrenceCount++;
+    }
+
+    // If fewer than two occurrences, clear (highlighting a single match looks weird)
+    if (occurrenceCount < 2)
+        styled_text_ctrl_sql->clearHighlights();
 }
 
 bool ExecuteSqlFrame::Show(bool show)
@@ -3627,7 +3840,7 @@ bool EditGeneratorValueHandler::handleURI(URI& uri)
     int64_t oldvalue = g->getValue();
     DatabasePtr db = g->getDatabase();
 
-    wxString value = wxGetTextFromUser(_("Changing generator value"),
+    wxString value = wxGetTextFromUser(_("Changing sequence value"),
         _("Enter new value"),
 #ifndef wxLongLong
     // MH: I have no idea if this works on all systems... but it should be better
@@ -3639,8 +3852,8 @@ bool EditGeneratorValueHandler::handleURI(URI& uri)
 
     if (value != "")
     {
-        wxString sql = "SET GENERATOR " + g->getQuotedName()
-            + " TO " + value + ";";
+        wxString sql = "ALTER SEQUENCE " + g->getQuotedName()
+            + " RESTART WITH " + value + ";";
         execSql(w, sql, db, sql, true);
     }
     return true;
