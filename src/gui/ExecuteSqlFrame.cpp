@@ -299,8 +299,16 @@ void SqlEditor::highlightText(int start, int end)
 {
     SetIndicatorCurrent(0);
     IndicatorSetStyle(0, wxSTC_INDIC_ROUNDBOX);
-    //TODO: If you don't like blue, please change to use global style configuration and send your patch
-    IndicatorSetForeground(0, wxColour(wxT("blue")));
+    // The translucent ROUNDBOX picks up the editor background. Pure
+    // "blue" reads fine on a white editor but renders as washed-out
+    // near-white blocks on a dark theme. Pick a colour that contrasts
+    // sensibly with the current background colour of the editor.
+    wxColour bg = StyleGetBackground(wxSTC_STYLE_DEFAULT);
+    bool darkBg = (bg.Red() + bg.Green() + bg.Blue()) < 384;  // < ~50% luminance
+    IndicatorSetForeground(0, darkBg
+        ? wxColour(80, 130, 200)    // muted blue, visible on dark
+        : wxColour(wxT("blue")));
+    IndicatorSetAlpha(0, darkBg ? 90 : 30);
     IndicatorFillRange(start, end - start);
 }
 
