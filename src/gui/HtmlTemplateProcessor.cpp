@@ -138,18 +138,32 @@ void HtmlTemplateProcessor::applyDarkModeIfNeeded(wxString& html)
     // text color via the first <body...> tag so all unstyled text inherits
     // a light foreground. font color="white" cells (header rows) keep
     // their explicit color since attribute beats inheritance.
-    int bodyStart = html.Find("<body");
-    if (bodyStart != wxNOT_FOUND)
+    //
+    // HTML attribute names are case-insensitive, and external templates
+    // (the user manual, license viewer) may use mixed casing. wx 3.3's
+    // wxString::Find(const wxString&) doesn't expose a case-insensitive
+    // flag, so search a bounded lower-cased prefix instead — <body> is
+    // virtually always within the first few KB of any HTML document and
+    // copying 8 KB is cheap even for multi-MB inputs.
+    const size_t kBodySearchPrefix = 8 * 1024;
+    wxString lowerPrefix = html.Mid(0, kBodySearchPrefix).Lower();
+    wxString::size_type bodyStart = lowerPrefix.find(wxT("<body"));
+    if (bodyStart != wxString::npos)
     {
-        int bodyEnd = html.find('>', bodyStart);
-        if (bodyEnd != wxNOT_FOUND)
+        wxString::size_type bodyEnd = html.find('>', bodyStart);
+        if (bodyEnd != wxString::npos)
         {
-            // If the existing <body> already specifies text=, leave it
-            // alone; otherwise insert text="#e0e0e0" before the closing >.
+            // Look for an existing text= attribute, but require a
+            // leading separator (' ', '\t' or '\n') so we don't false-
+            // positive on attribute values that contain "text=" as a
+            // substring (e.g. <body class="main-text-area">).
             wxString bodyTag = html.Mid(bodyStart, bodyEnd - bodyStart + 1);
-            if (bodyTag.Lower().Find("text=") == wxNOT_FOUND)
+            wxString lowerTag = bodyTag.Lower();
+            if (lowerTag.Find(wxT(" text=")) == wxNOT_FOUND
+                && lowerTag.Find(wxT("\ttext=")) == wxNOT_FOUND
+                && lowerTag.Find(wxT("\ntext=")) == wxNOT_FOUND)
             {
-                html.insert(bodyEnd, " text=\"#e0e0e0\"");
+                html.insert(bodyEnd, wxT(" text=\"#e0e0e0\""));
             }
         }
     }

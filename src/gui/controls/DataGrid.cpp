@@ -148,7 +148,11 @@ void DataGrid::fetchData(bool readonly)
         ca->SetOverflow(false);
         SetColAttr(i, ca);
     }
-    AutoSizeColumns(false);
+    // Gate the initial autofit on the same preference as the post-execute
+    // autofit so the user can actually opt out. Default to true to match
+    // existing behaviour (this call was previously unconditional).
+    if (config().get("autofitColumnsOnExecute", true))
+        AutoSizeColumns(false);
     EndBatch();
 
     // event handler is only needed if not all rows have already been
@@ -189,6 +193,12 @@ void DataGrid::showPopupMenu(wxPoint cursorPos)
     // TODO: merge this with ExecuteSqlFrame's menu
     m.Append(Cmds::DataGrid_FetchAll, _("Fetch all records"));
     m.Append(Cmds::DataGrid_CancelFetchAll, _("Stop fetching all records"));
+    m.AppendSeparator();
+
+    // Issue #228: best-fit columns to their content on demand. Also
+    // available as an automatic step after query execution via the
+    // "autofitColumnsOnExecute" Preference.
+    m.Append(Cmds::DataGrid_AutofitColumns, _("Best fit all columns"));
     m.AppendSeparator();
 
     m.Append(wxID_COPY, _("Copy"));
@@ -1191,15 +1201,16 @@ void DataGrid::setupStyles()
     SetCellHighlightColour(stylerManager().getDefaultStyle()->getfgColor());
 
 
-    // The active style's font is sized for the SQL editor (often 10pt
-    // monospace from Consolas/Courier); applying it to the data grid
-    // produced cells too small to read on Retina displays. Use the
-    // system GUI font for grid cells/labels — it follows the user's
-    // OS-level text size and stays consistent with the rest of the
-    // wxWidgets controls in the app.
-    wxFont sysFont = wxSystemSettings::GetFont(wxSYS_DEFAULT_GUI_FONT);
-    SetDefaultCellFont(sysFont);
-    SetLabelFont(sysFont);
+    // Use the active theme's font. FRStyleManager::assignWordStyle (and
+    // FRStyle::getFont) now lift theme font sizes below the system
+    // default GUI font size up to that minimum, so themes like
+    // DarkModeDefault that set fontSize="10" no longer produce
+    // unreadable grid cells on Retina displays. Users with explicit
+    // larger fonts in their theme still get exactly what they asked
+    // for — the previous wxSYS_DEFAULT_GUI_FONT bypass was a
+    // regression for that case.
+    SetDefaultCellFont(stylerManager().getDefaultStyle()->getFont());
+    SetLabelFont(stylerManager().getDefaultStyle()->getFont());
 
     updateRowHeights();
     ForceRefresh();
