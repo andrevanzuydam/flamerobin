@@ -696,6 +696,13 @@ const char* RowImpl::ColumnName(int varnum)
 	if (varnum < 1 || varnum > mDescrArea->sqld)
 		throw LogicExceptionImpl("Row::ColumName", _("Variable index out of range."));
 
+	// Issue #355: IBPP reads column names from the legacy XSQLVAR struct
+	// whose sqlname field is hard-capped at 32 bytes. Firebird 4+ allows
+	// 63-byte identifiers, so any longer name is silently truncated here.
+	// The properly-fixed path is the fb-cpp backend (default in this
+	// build), which uses Firebird's OO API IMessageMetadata interface
+	// and returns the full identifier. Users on FB 4+ who hit truncation
+	// should switch the active backend in Preferences -> Backends.
 	XSQLVAR* var = &(mDescrArea->sqlvar[varnum-1]);
 	size_t len = static_cast<size_t>(std::max<int>(0, var->sqlname_length));
 	if (len > sizeof(var->sqlname))
@@ -711,6 +718,8 @@ const char* RowImpl::ColumnAlias(int varnum)
 	if (varnum < 1 || varnum > mDescrArea->sqld)
 		throw LogicExceptionImpl("Row::ColumnAlias", _("Variable index out of range."));
 
+	// See ColumnName above for the FB4+ 63-byte identifier note — same
+	// XSQLVAR.aliasname 32-byte limit applies to aliases.
 	XSQLVAR* var = &(mDescrArea->sqlvar[varnum-1]);
 	size_t len = static_cast<size_t>(std::max<int>(0, var->aliasname_length));
 	if (len > sizeof(var->aliasname))
