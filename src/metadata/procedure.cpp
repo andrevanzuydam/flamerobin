@@ -443,6 +443,18 @@ wxString Procedure::getAlterSql(bool full)
 
 void Procedure::checkDependentProcedures()
 {
+    // Issue #409: this warning was originally added to flag the Firebird
+    // bug CORE-1592 ("altering procedure parameters can lead to an
+    // unrestorable database"), which was fixed in Firebird 4.0. On FB4+
+    // the warning is just noise — and worse, it fires falsely when only
+    // the procedure body changed (the dependency snapshot lags the
+    // commit), making bulk DDL deployment painful (multi-popup on every
+    // ALTER PROCEDURE in a script). Only run the check on engines where
+    // the underlying bug still exists.
+    DatabasePtr db = getDatabase();
+    if (db && db->getInfo().getODSVersionIsHigherOrEqualTo(13, 0))
+        return;     // FB 4.0+ (ODS 13.0); CORE-1592 is fixed.
+
     // check dependencies and parameters
     ensureChildrenLoaded();
     std::vector<Dependency> deps;
