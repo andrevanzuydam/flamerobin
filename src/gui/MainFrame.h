@@ -149,13 +149,18 @@ public:
         ID_button_prev,
         ID_button_next,
         ID_search_box,
-        ID_notebook
+        ID_notebook,
+        ID_filter_box,          // Issue #239 — tree filter at top
+        ID_button_filter_clear
     };
     void OnSearchTextChange(wxCommandEvent& event);
     void OnSearchBoxEnter(wxCommandEvent& event);
     void OnButtonSearchClick(wxCommandEvent &event);
     void OnButtonPrevClick(wxCommandEvent &event);
     void OnButtonNextClick(wxCommandEvent &event);
+    // Issue #239: live filter at the top of the main tree.
+    void OnFilterTextChange(wxCommandEvent& event);
+    void OnFilterClear(wxCommandEvent& event);
 
     DBHTreeControl* getTreeCtrl();
     MainFrame(wxWindow* parent, int id, const wxString& title, const wxPoint& pos = wxDefaultPosition,
@@ -207,6 +212,15 @@ protected:
     wxBitmapButton* button_prev;
     wxBitmapButton* button_next;
     wxBitmapButton* button_advanced;
+
+    // Issue #239 — top filter row (textbox + clear button)
+    wxPanel* filterPanelM{};
+    wxTextCtrl* filterBoxM{};
+    wxBitmapButton* filterClearM{};
+    // Recursively walk the tree, bolding items matching `text` and
+    // expanding their ancestors. When `text` is empty, bolding is
+    // cleared. Returns true if any item matched.
+    bool applyTreeFilter(const wxString& text);
 
     const wxString getName() const override;
     const wxRect getDefaultRect() const override;

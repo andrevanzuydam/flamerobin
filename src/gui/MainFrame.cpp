@@ -173,6 +173,17 @@ MainFrame::MainFrame(wxWindow* parent, int id, const wxString& title,
     button_prev->SetToolTip(_("Previous match"));
     button_next->SetToolTip(_("Next match"));
 
+    // Issue #239: filter row above the tree. Live as-you-type filter
+    // that bolds matching tree items and expands their ancestors so
+    // the matches are visible even when buried under many servers.
+    filterPanelM = new wxPanel(mainPanelM, -1, wxDefaultPosition,
+        wxDefaultSize, wxTAB_TRAVERSAL | wxBORDER_THEME);
+    filterBoxM = new wxTextCtrl(filterPanelM, ID_filter_box, wxEmptyString);
+    filterBoxM->SetHint(_("Filter…"));
+    filterClearM = new wxBitmapButton(filterPanelM, ID_button_filter_clear,
+        wxArtProvider::GetBitmap(wxART_CLOSE, wxART_TOOLBAR, btnBmpSize));
+    filterClearM->SetToolTip(_("Clear filter"));
+
     buildMainMenu();
     SetStatusBarPane(-1);   // disable automatic fill
     set_properties();
@@ -350,7 +361,16 @@ void MainFrame::do_layout()
     sizerSearch->Add(button_advanced);
     searchPanelM->SetSizer(sizerSearch);
 
+    // Issue #239: filter row layout — text box stretches, X clears.
+    {
+        wxSizer* fsz = new wxBoxSizer(wxHORIZONTAL);
+        fsz->Add(filterBoxM, 1, wxEXPAND | wxALIGN_CENTER_VERTICAL);
+        fsz->Add(filterClearM, 0, wxALIGN_CENTER_VERTICAL);
+        filterPanelM->SetSizer(fsz);
+    }
+
     searchPanelSizerM = new wxBoxSizer(wxVERTICAL);
+    searchPanelSizerM->Add(filterPanelM, 0, wxEXPAND);     // top filter
     searchPanelSizerM->Add(treeMainM, 1, wxEXPAND);
     searchPanelSizerM->Add(searchPanelM, 0, wxEXPAND);
     mainPanelM->SetSizer(searchPanelSizerM);
@@ -481,6 +501,9 @@ EVT_UPDATE_UI(Cmds::Menu_StartupDatabase, MainFrame::OnMenuUpdateIfDatabaseNotCo
     EVT_BUTTON(MainFrame::ID_button_advanced, MainFrame::OnButtonSearchClick)
     EVT_BUTTON(MainFrame::ID_button_prev, MainFrame::OnButtonPrevClick)
     EVT_BUTTON(MainFrame::ID_button_next, MainFrame::OnButtonNextClick)
+    // Issue #239 — top filter row events
+    EVT_TEXT(MainFrame::ID_filter_box, MainFrame::OnFilterTextChange)
+    EVT_BUTTON(MainFrame::ID_button_filter_clear, MainFrame::OnFilterClear)
 
     EVT_MENU(Cmds::Menu_CreateCollation,  MainFrame::OnMenuCreateCollation)
     EVT_MENU(Cmds::Menu_CreateDBTrigger,  MainFrame::OnMenuCreateDBTrigger)
@@ -1697,6 +1720,79 @@ void MainFrame::OnSearchTextChange(wxCommandEvent& WXUNUSED(event))
     wxStatusBar *sb = GetStatusBar();
     if (sb)
         sb->SetStatusText(_("Hit ENTER to focus the tree."));
+}
+
+namespace
+{
+// Recursive walker for the tree filter (Issue #239). Returns true if any
+// item in the subtree rooted at `id` matched. As a side effect each
+// matching item is bolded; subtrees containing matches are expanded so
+// the matches are visible.
+bool filterSubtree(wxTreeCtrl* tree, const wxTreeItemId& id,
+    const wxString& needleLower)
+{
+    bool selfMatch = false;
+    if (!needleLower.IsEmpty())
+        selfMatch = tree->GetItemText(id).Lower().Contains(needleLower);
+    tree->SetItemBold(id, selfMatch);
+
+    bool anyChildMatched = false;
+    wxTreeItemIdValue cookie;
+    for (wxTreeItemId ch = tree->GetFirstChild(id, cookie); ch.IsOk();
+        ch = tree->GetNextChild(id, cookie))
+    {
+        if (filterSubtree(tree, ch, needleLower))
+            anyChildMatched = true;
+    }
+
+    if (anyChildMatched && !needleLower.IsEmpty())
+        tree->Expand(id);   // ensure path-to-match is visible
+
+    return selfMatch || anyChildMatched;
+}
+}
+
+bool MainFrame::applyTreeFilter(const wxString& text)
+{
+    wxTreeItemId root = treeMainM->GetRootItem();
+    if (!root.IsOk())
+        return false;
+    // Walk children of the (hidden) root rather than root itself; the
+    // root is invisible on most platforms but bold-ing it would still
+    // affect any descendants we re-visit.
+    bool anyMatch = false;
+    wxString needle = text.Lower();
+    wxTreeItemIdValue cookie;
+    for (wxTreeItemId ch = treeMainM->GetFirstChild(root, cookie); ch.IsOk();
+        ch = treeMainM->GetNextChild(root, cookie))
+    {
+        if (filterSubtree(treeMainM, ch, needle))
+            anyMatch = true;
+    }
+    return anyMatch;
+}
+
+void MainFrame::OnFilterTextChange(wxCommandEvent& WXUNUSED(event))
+{
+    wxString needle = filterBoxM->GetValue();
+    bool anyMatch = applyTreeFilter(needle);
+    // Tint the filter text red when there's no match (mirrors the
+    // existing behaviour of the bottom search box).
+    filterBoxM->SetForegroundColour(
+        (!needle.IsEmpty() && !anyMatch)
+            ? *wxRED
+            : wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT));
+    filterBoxM->Refresh();
+}
+
+void MainFrame::OnFilterClear(wxCommandEvent& WXUNUSED(event))
+{
+    filterBoxM->ChangeValue(wxEmptyString);
+    applyTreeFilter(wxEmptyString);
+    filterBoxM->SetForegroundColour(
+        wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT));
+    filterBoxM->Refresh();
+    treeMainM->SetFocus();
 }
 
 void MainFrame::OnSearchBoxEnter(wxCommandEvent& WXUNUSED(event))
