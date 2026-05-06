@@ -261,7 +261,18 @@ SqlTokenizer::FirebirdKeywordVersion SqlTokenizer::normalizeKeywordVersion(
     int odsMajor, int odsMinor)
 {
     if (odsMajor <= 0)
-        return FirebirdKeywordVersion{2, 5};
+    {
+        // Issue #575: the SQL editor is set up before any database is
+        // connected (SqlEditor::setupStyles -> setKeywords(-1, -1)), so we
+        // need a fallback. Defaulting to FB 2.5 here means FB3+ keywords
+        // (BOOLEAN, TRUE, FALSE, RETURN, DETERMINISTIC, ...) are never
+        // highlighted until a connection establishes ODS info — and on
+        // some code paths (e.g. volatile databases) the version-aware
+        // setKeywords() call never runs. Default to the newest known set
+        // instead so modern keywords highlight by default; the real per-
+        // connection ODS still overrides this once we have it.
+        return FirebirdKeywordVersion{6, 0};
+    }
 
     if (odsMajor <= 11)
         return FirebirdKeywordVersion{2, 5};
