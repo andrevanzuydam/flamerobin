@@ -181,7 +181,16 @@ void FRStyleManager::assignGlobal(wxStyledTextCtrl* text)
 {
     //text->StyleClearAll();
 
-    FRStyle* globalOverrideStyle = nullptr;
+    // "Default Style" is the canonical source of the editor background and
+    // foreground in every theme we ship: white-on-black for the light
+    // stylers.xml, light-on-dark for DarkModeDefault, etc. We deliberately
+    // do NOT use the "Global override" widget here — that one is a
+    // Notepad++ leftover whose values are placeholder demo colors (bright
+    // orange in stylers.xml) that NP++ only applies when the user ticks
+    // the per-attribute "Enable global ..." checkboxes, and we don't carry
+    // those flags on the wxWidgets side. Picking it up unconditionally
+    // turned every fresh light-mode SQL editor into a glaring orange box.
+    FRStyle* defaultStyle = nullptr;
 
     for (int i = 0; i < globalStylerM->getNbStyler(); i++) {
         FRStyle* style = globalStylerM->getStyle(i);
@@ -189,16 +198,16 @@ void FRStyleManager::assignGlobal(wxStyledTextCtrl* text)
         assignWordStyle(text, style);
         //}
         if (style->getStyleDesc() == "Global override") {
-            //globalStyleM = style;
-            globalOverrideStyle = style;
-            text->StyleResetDefault();
-            text->SetBackgroundColour(style->getbgColor());
-            text->SetForegroundColour(style->getfgColor());
-
+            // Honour only the font (face / size / bold etc.) from the
+            // override entry, never its colors — see comment above.
             assignWordStyle(text, style);
         }
         if (style->getStyleDesc() == "Default Style") {
-            //defaultStyleM = style;
+            defaultStyle = style;
+            text->StyleResetDefault();
+            text->SetBackgroundColour(style->getbgColor());
+            text->SetForegroundColour(style->getfgColor());
+            assignWordStyle(text, style);
         }
         if (style->getStyleDesc() == "Caret colour") {
             text->SetCaretForeground(style->getfgColor());
@@ -244,12 +253,13 @@ void FRStyleManager::assignGlobal(wxStyledTextCtrl* text)
     // assignWordStyle, so style slot 0 ends up holding whichever entry
     // was iterated last (often a near-white selection or current-line
     // colour). On dark themes that surfaces as light blocks behind every
-    // unstyled token. Re-apply Global override last and propagate it to
+    // unstyled token. Re-apply Default Style last and propagate it to
     // every style slot via StyleClearAll so unset lexer styles inherit a
-    // sensible background instead of Scintilla's hard-coded white.
-    if (globalOverrideStyle != nullptr) {
-        text->StyleSetBackground(wxSTC_STYLE_DEFAULT, globalOverrideStyle->getbgColor());
-        text->StyleSetForeground(wxSTC_STYLE_DEFAULT, globalOverrideStyle->getfgColor());
+    // sensible background instead of Scintilla's hard-coded white (or
+    // the contaminated styleID 0).
+    if (defaultStyle != nullptr) {
+        text->StyleSetBackground(wxSTC_STYLE_DEFAULT, defaultStyle->getbgColor());
+        text->StyleSetForeground(wxSTC_STYLE_DEFAULT, defaultStyle->getfgColor());
         text->StyleClearAll();
     }
 }
