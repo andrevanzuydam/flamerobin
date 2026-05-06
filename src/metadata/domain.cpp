@@ -229,12 +229,19 @@ wxString Domain::dataTypeToString(short datatype, short scale, short precision,
         return retval;
     }
 
-    // INTEGER(prec=0), DECIMAL(sub_type=2), NUMERIC(sub_t=1), BIGINT(sub_t=0), 
+    // INTEGER(prec=0), DECIMAL(sub_type=2), NUMERIC(sub_t=1), BIGINT(sub_t=0),
     // Int128(sub_t=0)
-    if (datatype == 7 || datatype == 8 || datatype == 16 || 
+    if (datatype == 7 || datatype == 8 || datatype == 16 ||
         datatype == 26)
     {
-        if (scale == 0)
+        // Issue #301: only collapse to SMALLINT / INTEGER when the
+        // column was declared as such — i.e. subtype == 0. A column
+        // declared as DECIMAL(p,0) or NUMERIC(p,0) lands on the same
+        // engine type but with subtype == 2 (DECIMAL) or subtype == 1
+        // (NUMERIC); keeping the original declaration matters for
+        // stored-procedure parameter DDL where the engine round-trips
+        // the type back to clients.
+        if (scale == 0 && subtype == 0)
         {
             if (datatype == 7)
                 return SqlTokenizer::getKeyword(kwSMALLINT);
