@@ -315,7 +315,6 @@ void SqlEditor::clearHighlights()
 
 void SqlEditor::setChars(bool firebirdIdentifierOnly)
 {
-    SetKeyWords(0, SqlTokenizer::getKeywordsString(SqlTokenizer::kwLowerCase));
     wxString chars("_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz\"$");
 
     if (!firebirdIdentifierOnly)
@@ -326,6 +325,12 @@ void SqlEditor::setChars(bool firebirdIdentifierOnly)
                 chars += wxChar(ch);
     }
     SetWordChars(chars);
+}
+
+void SqlEditor::setKeywords(int odsMajor, int odsMinor)
+{
+    SetKeyWords(0, SqlTokenizer::getKeywordsString(SqlTokenizer::kwLowerCase,
+        odsMajor, odsMinor));
 }
 
 //! This code has to be called each time the font has changed, so that the control updates
@@ -504,6 +509,7 @@ void SqlEditor::setupStyles()
     stylerManager().assignLexer(this);
     SetLexer(wxSTC_LEX_SQL);
     stylerManager().assignMargin(this);
+    setKeywords(-1, -1);
     setChars(false);
 
 }
@@ -564,17 +570,17 @@ ExecuteSqlFrame::ExecuteSqlFrame(wxWindow* WXUNUSED(parent), int id,
     if (db->getIsVolative())
         prepareVolatileDatabase();
 
-    transactionIsolationLevelM = static_cast<IBPP::TIL>(config().get("transactionIsolationLevel", 0));
-    transactionLockResolutionM = config().get("transactionLockResolution", true) ? IBPP::lrWait : IBPP::lrNoWait;
-    transactionAccessModeM = config().get("transactionAccessMode", false) ? IBPP::amRead : IBPP::amWrite;
+    transactionIsolationLevelM = static_cast<fr::TransactionIsolationLevel>(config().get("transactionIsolationLevel", 0));
+    transactionLockResolutionM = config().get("transactionLockResolution", true) ? fr::TransactionLockResolution::Wait : fr::TransactionLockResolution::NoWait;
+    transactionAccessModeM = config().get("transactionAccessMode", false) ? fr::TransactionAccessMode::Read : fr::TransactionAccessMode::Write;
     showStatisticsM = config().get("SQLEditorShowStats", true);
+    showProfilerM = config().get("SQLEditorShowProfiler", false);
     highlightWordText = config().get("highlightWordText", true);
 
     timerBlobEditorM.SetOwner(this, TIMER_ID_UPDATE_BLOB);
 
-    CommandManager cm;
-    buildToolbar(cm);
-    buildMainMenu(cm);
+    buildToolbar(CommandManager::get());
+    buildMainMenu(CommandManager::get());
 
     panel_contents = new wxPanel(this, -1, wxDefaultPosition, wxDefaultSize,
         wxTAB_TRAVERSAL);
@@ -603,6 +609,26 @@ ExecuteSqlFrame::ExecuteSqlFrame(wxWindow* WXUNUSED(parent), int id,
     notebook_pane_2 = new wxPanel(notebook_1, -1);
     grid_data = new DataGrid(notebook_pane_2, ID_grid_data);
     notebook_1->AddPage(notebook_pane_2, _("Data"));
+
+    if ((databaseM->getODSMajor() > 13) || (databaseM->getODSMajor() == 13 && databaseM->getODSMinor() >= 1))
+    {
+        notebook_pane_3 = new wxPanel(notebook_1, -1);
+        wxBoxSizer* sizer_profiler = new wxBoxSizer(wxVERTICAL);
+        grid_profiler_psql = new DataGrid(notebook_pane_3, -1);
+        grid_profiler_rs = new DataGrid(notebook_pane_3, -1);
+        sizer_profiler->Add(new wxStaticText(notebook_pane_3, -1, _("PSQL Statistics")), 0, wxALL, 5);
+        sizer_profiler->Add(grid_profiler_psql, 1, wxEXPAND);
+        sizer_profiler->Add(new wxStaticText(notebook_pane_3, -1, _("Record Source Statistics")), 0, wxALL, 5);
+        sizer_profiler->Add(grid_profiler_rs, 1, wxEXPAND);
+        notebook_pane_3->SetSizer(sizer_profiler);
+        notebook_1->AddPage(notebook_pane_3, _("Profiler"));
+    }
+    else
+    {
+        notebook_pane_3 = nullptr;
+        grid_profiler_psql = nullptr;
+        grid_profiler_rs = nullptr;
+    }
 
     statusbar_1 = CreateStatusBar(4);
     SetStatusBarPane(-1);
@@ -636,16 +662,16 @@ Database* ExecuteSqlFrame::getDatabase() const
 
 bool ExecuteSqlFrame::isTransactionStarted()
 {
-    if (transactionM == 0)
+    if (transactionM == nullptr)
         return false;
     try
     {
-        return transactionM->Started();
+        return transactionM->isActive();
     }
-    catch (IBPP::LogicException&)
+    catch (std::exception&)
     {
-        transactionM = 0;
-        statementM = 0;
+        transactionM = nullptr;
+        statementM = nullptr;
         inTransaction(false);
         executedStatementsM.clear();
         return false;
@@ -693,6 +719,9 @@ void ExecuteSqlFrame::buildToolbar(CommandManager& cm)
     toolBarM->AddTool( Cmds::Query_Show_plan, _("Show plan"),
         wxArtProvider::GetBitmap(ART_ShowExecutionPlan, wxART_TOOLBAR, bmpSize), wxNullBitmap,
         wxITEM_NORMAL, cm.getToolbarHint(_("Show query execution plan"), Cmds::Query_Show_plan));
+    toolBarM->AddTool(Cmds::Query_Show_Profiler, _("Profiler"),
+        wxArtProvider::GetBitmap(ART_ShowProfiler, wxART_TOOLBAR, bmpSize), wxNullBitmap,
+        wxITEM_CHECK, cm.getToolbarHint(_("Display SQL/PSQL Profiler"), Cmds::Query_Show_Profiler));
     toolBarM->AddTool( Cmds::Query_Commit, _("Commit"),
         wxArtProvider::GetBitmap(ART_CommitTransaction, wxART_TOOLBAR, bmpSize), wxNullBitmap,
         wxITEM_NORMAL, cm.getToolbarHint(_("Commit transaction"), Cmds::Query_Commit));
@@ -788,6 +817,8 @@ void ExecuteSqlFrame::buildMainMenu(CommandManager& cm)
         cm.getMainMenuItemText(_("Show execution &plan"), Cmds::Query_Show_plan));
     statementMenu->AppendCheckItem(Cmds::Query_Show_Statistics,
         cm.getMainMenuItemText(_("Display detailed query statistics"), Cmds::Query_Show_Statistics));
+    statementMenu->AppendCheckItem(Cmds::Query_Show_Profiler,
+        cm.getMainMenuItemText(_("Display SQL/PSQL Profiler"), Cmds::Query_Show_Profiler));
     statementMenu->Append(Cmds::Query_Execute_selection,
         cm.getMainMenuItemText(_("Execute &selection"), Cmds::Query_Execute_selection));
     statementMenu->Append(Cmds::Query_Execute_from_cursor,
@@ -801,6 +832,8 @@ void ExecuteSqlFrame::buildMainMenu(CommandManager& cm)
         cm.getMainMenuItemText(_("Dirty read isolation mode"), Cmds::Query_TransactionReadDirty));
     stmtPropMenu->AppendRadioItem(Cmds::Query_TransactionReadCommitted,
         cm.getMainMenuItemText(_("Read committed isolation mode"), Cmds::Query_TransactionReadCommitted));
+    stmtPropMenu->AppendRadioItem(Cmds::Query_TransactionReadConsistency,
+        cm.getMainMenuItemText(_("Read consistency isolation mode"), Cmds::Query_TransactionReadConsistency));
     stmtPropMenu->AppendRadioItem(Cmds::Query_TransactionConsistency,
         cm.getMainMenuItemText(_("Consistency isolation mode"), Cmds::Query_TransactionConsistency));
     stmtPropMenu->AppendSeparator();
@@ -1011,6 +1044,8 @@ BEGIN_EVENT_TABLE(ExecuteSqlFrame, wxFrame)
     EVT_MENU(Cmds::Query_Show_plan,           ExecuteSqlFrame::OnMenuShowPlan)
     EVT_MENU(Cmds::Query_Show_Statistics,     ExecuteSqlFrame::OnMenuShowStatistics)
     EVT_UPDATE_UI(Cmds::Query_Show_Statistics, ExecuteSqlFrame::OnMenuUpdateShowStatistics)
+    EVT_MENU(Cmds::Query_Show_Profiler,       ExecuteSqlFrame::OnMenuShowProfiler)
+    EVT_UPDATE_UI(Cmds::Query_Show_Profiler,   ExecuteSqlFrame::OnMenuUpdateShowProfiler)
     EVT_MENU(Cmds::Query_Execute_selection,   ExecuteSqlFrame::OnMenuExecuteSelection)
     EVT_MENU(Cmds::Query_Execute_from_cursor, ExecuteSqlFrame::OnMenuExecuteFromCursor)
     EVT_UPDATE_UI(Cmds::Query_Execute,             ExecuteSqlFrame::OnMenuUpdateWhenExecutePossible)
@@ -1728,6 +1763,17 @@ void ExecuteSqlFrame::OnMenuUpdateShowStatistics(wxUpdateUIEvent& event)
     event.Check(showStatisticsM);
 }
 
+void ExecuteSqlFrame::OnMenuShowProfiler(wxCommandEvent& WXUNUSED(event))
+{
+    showProfilerM = !showProfilerM;
+    config().setValue("SQLEditorShowProfiler", showProfilerM);
+}
+
+void ExecuteSqlFrame::OnMenuUpdateShowProfiler(wxUpdateUIEvent& event)
+{
+    event.Check(showProfilerM);
+}
+
 void ExecuteSqlFrame::OnMenuExecuteFromCursor(wxCommandEvent& WXUNUSED(event))
 {
     clearLogBeforeExecution();
@@ -1804,7 +1850,7 @@ void ExecuteSqlFrame::updateBlobEditor()
         editBlobDlgM->Update();
     }
 
-    editBlobDlgM->setBlob(grid_data, dgt, &statementM, row, col);
+    editBlobDlgM->setBlob(grid_data, dgt, statementM, row, col);
     SetFocus();
     grid_data->SetFocus();
 }
@@ -2029,7 +2075,7 @@ void ExecuteSqlFrame::OnMenuGridSetFieldToNULL(wxCommandEvent& WXUNUSED(event))
             && grid_data->GetGridCursorCol() == col
             && grid_data->GetGridCursorRow() == row)
         {
-            editBlobDlgM->setBlob(grid_data, dgt, &statementM, row, col, false);
+            editBlobDlgM->setBlob(grid_data, dgt, statementM, row, col, false);
         }
     }
 
@@ -2162,7 +2208,10 @@ void ExecuteSqlFrame::inTransaction(bool started)
     inTransactionM = started;
     splitScreen();
     if (started)
-        statusbar_1->SetStatusText(_("Transaction started"), 3);
+    {
+        wxString il = isolationLevelToString(transactionIsolationLevelM);
+        statusbar_1->SetStatusText(wxString::Format(_("Transaction started (%s)"), il.c_str()), 3);
+    }
     else
     {
         grid_data->ClearGrid();
@@ -2420,19 +2469,17 @@ void ExecuteSqlFrame::OnMenuUpdateWhenExecutePossible(wxUpdateUIEvent& event)
     event.Enable(!closeWhenTransactionDoneM);
 }
 
-void ExecuteSqlFrame::compareCounts(IBPP::DatabaseCounts& one,
-    IBPP::DatabaseCounts& two)
+void ExecuteSqlFrame::compareCounts(std::map<int, fr::CountInfo>& one,
+    std::map<int, fr::CountInfo>& two)
 {
-    for (IBPP::DatabaseCounts::iterator it = two.begin(); it != two.end();
-        ++it)
+    for (auto const& [relId, r1] : two)
     {
         wxString str_log;
-        IBPP::DatabaseCounts::iterator i2 = one.find((*it).first);
-        IBPP::CountInfo c;
-        IBPP::CountInfo& r1 = (*it).second;
-        IBPP::CountInfo& r2 = c;
+        auto i2 = one.find(relId);
+        fr::CountInfo r2;
         if (i2 != one.end())
-            r2 = (*i2).second;
+            r2 = i2->second;
+
         if (r1.inserts > r2.inserts)
             str_log += wxString::Format(_("%d inserts. "), r1.inserts - r2.inserts);
         if (r1.updates > r2.updates)
@@ -2448,25 +2495,22 @@ void ExecuteSqlFrame::compareCounts(IBPP::DatabaseCounts& one,
             wxString relName;
             try
             {
-                IBPP::Statement st = IBPP::StatementFactory(
-                    databaseM->getIBPPDatabase(), transactionM);
-                st->Prepare(
+                fr::IStatementPtr st = databaseM->getDALDatabase()->createStatement(transactionM);
+                st->prepare(
                     "select rdb$relation_name "
                     "from rdb$relations where rdb$relation_id = ?");
-                st->Set(1, (*it).first);
-                st->Execute();
-                if (st->Fetch())
+                st->setInt32(0, relId);
+                st->execute();
+                if (st->fetch())
                 {
-                    std::string s;
-                    st->Get(1, s);
-                    relName = std2wxIdentifier(s, databaseM->getCharsetConverter());
+                    relName = std2wxIdentifier(st->getString(0), databaseM->getCharsetConverter());
                 }
             }
             catch (...)
             {
             }
             if (relName.IsEmpty())
-                relName.Format(_("Relation #%d"), (*it).first);
+                relName.Format(_("Relation #%d"), relId);
             log(relName + ": " + str_log, ttSql);
         }
     }
@@ -2564,104 +2608,92 @@ bool ExecuteSqlFrame::execute(wxString sql, const wxString& terminator,
         {
             log(_("Starting transaction..."));
 
-            // fix the IBPP::LogicException "No Database is attached."
-            // which happens after a database reconnect
-            // (this action detaches the database from all its transactions)
-            if (transactionM != 0 && !isTransactionStarted())
+            if (transactionM != nullptr && !isTransactionStarted())
             {
                 try
                 {
-                    transactionM->Start();
+                    transactionM->start();
                 }
-                catch (IBPP::LogicException&)
+                catch (...)
                 {
-                    transactionM = 0;
+                    transactionM = nullptr;
                 }
             }
 
-            if (transactionM == 0)
+            if (transactionM == nullptr)
             {
-                transactionM = IBPP::TransactionFactory(
-                    databaseM->getIBPPDatabase(), transactionAccessModeM,
-                    transactionIsolationLevelM, transactionLockResolutionM);
+                transactionM = databaseM->getDALDatabase()->createTransaction();
+                transactionM->setAccessMode(transactionAccessModeM);
+                transactionM->setIsolationLevel(transactionIsolationLevelM);
+                transactionM->setLockResolution(transactionLockResolutionM);
             }
-            transactionM->Start();
+            transactionM->start();
             inTransaction(true);
 
-            grid_data->EnableEditing(transactionAccessModeM == IBPP::amWrite);
+            grid_data->EnableEditing(transactionAccessModeM == fr::TransactionAccessMode::Write);
         }
 
         int fetch1 = 0, mark1 = 0, read1 = 0, write1 = 0, ins1 = 0, upd1 = 0,
             del1 = 0, ridx1 = 0, rseq1 = 0, mem1 = 0;
         int fetch2, mark2, read2, write2, ins2, upd2, del2, ridx2, rseq2, mem2;
-        IBPP::DatabaseCounts counts1, counts2;
+        std::map<int, fr::CountInfo> counts1, counts2;
         bool doShowStats = showStatisticsM;
         if (!prepareOnly && doShowStats)
         {
-            databaseM->getIBPPDatabase()->
-                Statistics(&fetch1, &mark1, &read1, &write1, &mem1);
-            databaseM->getIBPPDatabase()->
-                Counts(&ins1, &upd1, &del1, &ridx1, &rseq1);
-            databaseM->getIBPPDatabase()->DetailedCounts(counts1);
+            databaseM->getDALDatabase()->getStatistics(&fetch1, &mark1, &read1, &write1, &mem1);
+            databaseM->getDALDatabase()->getCounts(&ins1, &upd1, &del1, &ridx1, &rseq1);
+            databaseM->getDALDatabase()->getDetailedCounts(counts1);
         }
         grid_data->ClearGrid(); // statement object will be invalidated, so clear the grid
-        statementM = IBPP::StatementFactory(databaseM->getIBPPDatabase(), transactionM);
+        statementM = databaseM->getDALDatabase()->createStatement(transactionM);
         log(_("Preparing statement: ") + sql, ttSql);
         sae.scroll();
         {
             wxStopWatch sw;
-            statementM->Prepare(wx2std(sql, databaseM->getCharsetConverter()));
+            statementM->prepare(wx2std(sql, databaseM->getCharsetConverter()));
             log(wxString::Format(_("Statement prepared (elapsed time: %s)."),
                 millisToTimeString(sw.Time()).c_str()));
         }
 
-        // we don't check IBPP::Select since Firebird 2.0 has a new feature
-        // INSERT ... RETURNING which isn't detected as stSelect by IBPP
         bool hasColumns = false;
         try
         {
-            int cols = statementM->Columns();
+            int cols = statementM->getColumnCount();
             hasColumns = cols > 0;
             if (doShowStats)
             {
-                for (int i = 1; i <= cols; i++)
+                for (int i = 0; i < cols; i++)
                 {
-                    wxString tablename(std2wxIdentifier(statementM->ColumnTable(i),
+                    wxString tablename(std2wxIdentifier(statementM->getColumnTable(i),
                         databaseM->getCharsetConverter()));
-                    wxString colname(std2wxIdentifier(statementM->ColumnName(i),
+                    wxString colname(std2wxIdentifier(statementM->getColumnName(i),
                         databaseM->getCharsetConverter()));
-                    wxString aliasname(std2wxIdentifier(statementM->ColumnAlias(i),
+                    wxString aliasname(std2wxIdentifier(statementM->getColumnAlias(i),
                         databaseM->getCharsetConverter()));
-                    log(wxString::Format(_("Field #%02d: %s.%s Alias:%s Type:%s sqlype: %d subtype: %d len: %d scale: %d"),
-                        i, tablename.c_str(), colname.c_str(), aliasname.c_str(),
-                        IBPPtype2string(
+                    log(wxString::Format(_("Field #%02d: %s.%s Alias:%s Type:%s len: %d scale: %d"),
+                        i + 1, tablename.c_str(), colname.c_str(), aliasname.c_str(),
+                        DALtype2string(
                             databaseM,
-                            statementM->ColumnType(i),
-                            statementM->ColumnSubtype(i),
-                            statementM->ColumnSize(i),
-                            statementM->ColumnScale(i)).c_str(),
-                            statementM->ColumnSQLType(i),
-                            statementM->ColumnSubtype(i),
-                            statementM->ColumnSize(i),
-                            statementM->ColumnScale(i)
+                            statementM->getColumnType(i),
+                            statementM->getColumnSubtype(i),
+                            statementM->getColumnSize(i),
+                            statementM->getColumnScale(i)).c_str(),
+                            statementM->getColumnSize(i),
+                            statementM->getColumnScale(i)
                         ), ttSql);
                 }
             }
         }
-        catch(IBPP::Exception&)    // reading column info might fail,
+        catch(std::exception&)    // reading column info might fail,
         {                          // but we still want to show the plan
         }                          // so we have separate exception handlers
 
-        // for some statements (DDL) it is never available
-        // for INSERTs, it is available sometimes (insert into ... select ... )
-        // but if it not, IBPP throws an exception
         try
         {
-            std::string plan;
-            statementM->Plan(plan);
+            std::string plan = statementM->getPlan();
             log(wxString(plan.c_str(), *databaseM->getCharsetConverter()));
         }
-        catch(IBPP::Exception&)
+        catch(std::exception&)
         {
             log(_("Plan not available."));
         }
@@ -2669,9 +2701,9 @@ bool ExecuteSqlFrame::execute(wxString sql, const wxString& terminator,
         if (prepareOnly)
             return true;
 
-        log(wxString::Format(_("Parameters: %zu"), statementM->ParametersByName().size() ));
+        log(wxString::Format(_("Parameters: %d"), statementM->getParameterCount() ));
         //Define parameters here:
-        if (statementM->ParametersByName().size() >0)
+        if (statementM->getParameterCount() > 0)
         {
             //Insert parameters here:
             InsertParametersDialog* id = new InsertParametersDialog(this, statementM,
@@ -2682,27 +2714,93 @@ bool ExecuteSqlFrame::execute(wxString sql, const wxString& terminator,
 
         log(wxEmptyString);
         log(wxEmptyString);
+
+        int64_t profileSessionId = 0;
+        bool profilingStarted = false;
+        if (showProfilerM && ((databaseM->getODSMajor() > 13) || (databaseM->getODSMajor() == 13 && databaseM->getODSMinor() >= 1)))
+        {
+            try {
+                fr::IStatementPtr stProf = databaseM->getDALDatabase()->createStatement(transactionM);
+                stProf->prepare("SELECT RDB$PROFILER.START_SESSION(?) FROM RDB$DATABASE");
+                stProf->setString(0, "FlameRobin");
+                stProf->execute();
+                if (stProf->fetch())
+                    profileSessionId = stProf->getInt64(0);
+                profilingStarted = (profileSessionId != 0);
+            } catch(...) {}
+        }
+
         log(_("Executing statement..."));
         sae.scroll();
         {
             wxStopWatch sw;
-            statementM->Execute();
+            statementM->execute();
             log(wxString::Format(_("Statement executed (elapsed time: %s)."),
                 millisToTimeString(sw.Time()).c_str()));
         }
-        IBPP::STT type = statementM->Type();
+
+        if (profilingStarted)
+        {
+            try {
+                fr::IStatementPtr stProf = databaseM->getDALDatabase()->createStatement(transactionM);
+                stProf->prepare("EXECUTE PROCEDURE RDB$PROFILER.FINISH_SESSION(TRUE)");
+                stProf->execute();
+                
+                // PSQL Stats
+                fr::IStatementPtr stPsql = databaseM->getDALDatabase()->createStatement(transactionM);
+                stPsql->prepare("SELECT REQ.REQUEST_NAME, STAT.LINE_NUM, STAT.COLUMN_NUM, STAT.COUNTER, STAT.TOTAL_TIME / 1000000.0, STAT.MAX_TIME / 1000000.0 "
+                                "FROM PLG$PROF_PSQL_STATS STAT "
+                                "JOIN PLG$PROF_REQUESTS REQ ON STAT.PROFILE_ID = REQ.PROFILE_ID AND STAT.REQUEST_ID = REQ.REQUEST_ID "
+                                "WHERE STAT.PROFILE_ID = ? "
+                                "ORDER BY STAT.TOTAL_TIME DESC");
+                stPsql->setInt64(0, profileSessionId);
+                stPsql->execute();
+                
+                DataGridTable* tbPsql = new DataGridTable(stPsql, databaseM);
+                if (grid_profiler_psql)
+                {
+                    grid_profiler_psql->SetTable(tbPsql, true);
+                    grid_profiler_psql->fetchData(true);
+                }
+                else
+                    delete tbPsql;
+
+                // Record Source Stats
+                fr::IStatementPtr stRs = databaseM->getDALDatabase()->createStatement(transactionM);
+                stRs->prepare("SELECT RS.SOURCE_NAME, RSS.COUNTER, RSS.TOTAL_TIME / 1000000.0 "
+                               "FROM PLG$PROF_RECORD_SOURCE_STATS RSS "
+                               "JOIN PLG$PROF_RECORD_SOURCES RS ON RSS.PROFILE_ID = RS.PROFILE_ID AND RSS.CURSOR_ID = RS.CURSOR_ID AND RSS.SOURCE_ID = RS.SOURCE_ID "
+                               "WHERE RSS.PROFILE_ID = ? "
+                               "ORDER BY RSS.TOTAL_TIME DESC");
+                stRs->setInt64(0, profileSessionId);
+                stRs->execute();
+                
+                DataGridTable* tbRs = new DataGridTable(stRs, databaseM);
+                if (grid_profiler_rs)
+                {
+                    grid_profiler_rs->SetTable(tbRs, true);
+                    grid_profiler_rs->fetchData(true);
+                }
+                else
+                    delete tbRs;
+            } catch(...) {}
+        }
+        fr::StatementType type = statementM->getType();
         if (hasColumns)            // for select statements: show data
         {
-            grid_data->fetchData(transactionAccessModeM == IBPP::amRead);
+            DataGridTable* tb = grid_data->getDataGridTable();
+            if (tb)
+                tb->setStatement(statementM);
+            grid_data->fetchData(transactionAccessModeM == fr::TransactionAccessMode::Read);
             setViewMode(vmGrid);
         }
 
         if (doShowStats)
         {
-            databaseM->getIBPPDatabase()->Statistics(
+            databaseM->getDALDatabase()->getStatistics(
                 &fetch2, &mark2, &read2, &write2, &mem2);
-            databaseM->getIBPPDatabase()->
-                Counts(&ins2, &upd2, &del2, &ridx2, &rseq2);
+            databaseM->getDALDatabase()->getCounts(
+                &ins2, &upd2, &del2, &ridx2, &rseq2);
             log(wxString::Format(
                 _("%d fetches, %d marks, %d reads, %d writes."),
                 fetch2-fetch1, mark2-mark1, read2-read1, write2-write1));
@@ -2710,57 +2808,67 @@ bool ExecuteSqlFrame::execute(wxString sql, const wxString& terminator,
                 _("%d inserts, %d updates, %d deletes, %d index, %d seq."),
                 ins2-ins1, upd2-upd1, del2-del1, ridx2-ridx1, rseq2-rseq1));
             log(wxString::Format(_("Delta memory: %d bytes."), mem2-mem1));
-            databaseM->getIBPPDatabase()->DetailedCounts(counts2);
+            databaseM->getDALDatabase()->getDetailedCounts(counts2);
             compareCounts(counts1, counts2);
         }
 
-        if (type != IBPP::stSelect) // for other statements: show rows affected
+        if (type != fr::StatementType::Select && !hasColumns) // for other statements: show rows affected
         {   // left trim
             wxString::size_type p = sql.find_first_not_of(" \n\t\r");
             if (p != wxString::npos && p > 0)
                 sql.erase(0, p);
-            if (type == IBPP::stInsert || type == IBPP::stDelete
-                || type == IBPP::stExecProcedure || type == IBPP::stUpdate)
+            if (type == fr::StatementType::Insert || type == fr::StatementType::Delete
+                || type == fr::StatementType::ExecProcedure || type == fr::StatementType::Update
+                || type == fr::StatementType::Merge)
             {
                 // INSERT INTO..RETURNING and EXECUTE PROCEDURE may throw
                 // when they return a single record
                 try
                 {
                     wxString addon;
-                    if (statementM->AffectedRows() % 10 != 1)
+                    int affectedRows = statementM->getAffectedRows();
+                    if (affectedRows % 10 != 1)
                         addon = "s";
                     wxString s = wxString::Format(_("%d row%s affected directly."),
-                        statementM->AffectedRows(), addon.c_str());
+                        affectedRows, addon.c_str());
                     log("" + s);
                     statusbar_1->SetStatusText(s, 1);
                 }
-                catch (IBPP::Exception&)
+                catch (std::exception&)
                 {
                 }
             }
             if (stm.isDDL())
-                type = IBPP::stDDL;
+                type = fr::StatementType::DDL;
             executedStatementsM.push_back(stm);
             setViewMode(vmEditor);
-            if (type == IBPP::stDDL && autoCommitM)
+            if (type == fr::StatementType::DDL && autoCommitM)
             {
                 if (!commitTransaction())
                     retval = false;
             }
         }
+        else if (type != fr::StatementType::Select && hasColumns)
+        {
+            // For DML with RETURNING, still show affected rows in the log
+            try
+            {
+                int affectedRows = statementM->getAffectedRows();
+                wxString addon = (affectedRows % 10 != 1) ? "s" : "";
+                wxString s = wxString::Format(_("%d row%s affected directly."),
+                    affectedRows, addon.c_str());
+                log("" + s);
+            }
+            catch (...) {}
+            executedStatementsM.push_back(stm);
+        }
     }
-    catch(IBPP::Exception& e)
+    catch(std::exception& e)
     {
         splitScreen();
         wxString msg(e.what(),
             *databaseM->getCharsetConverter());
         log(_("Error: ") + msg + "\n", ttError);
-        retval = false;
-    }
-    catch (std::exception& e)
-    {
-        splitScreen();
-        log(_("Error: ") + e.what() + "\n", ttError);
         retval = false;
     }
     catch (...)
@@ -2792,17 +2900,19 @@ void ExecuteSqlFrame::splitScreen()
 void ExecuteSqlFrame::OnMenuTransactionIsolationLevel(wxCommandEvent& event)
 {
     if (event.GetId() == Cmds::Query_TransactionConcurrency)
-        transactionIsolationLevelM = IBPP::ilConcurrency;
+        transactionIsolationLevelM = fr::TransactionIsolationLevel::Concurrency;
     else if (event.GetId() == Cmds::Query_TransactionConsistency)
-        transactionIsolationLevelM = IBPP::ilConsistency;
+        transactionIsolationLevelM = fr::TransactionIsolationLevel::Consistency;
     else if (event.GetId() == Cmds::Query_TransactionReadCommitted)
-        transactionIsolationLevelM = IBPP::ilReadCommitted;
+        transactionIsolationLevelM = fr::TransactionIsolationLevel::ReadCommitted;
+    else if (event.GetId() == Cmds::Query_TransactionReadConsistency)
+        transactionIsolationLevelM = fr::TransactionIsolationLevel::ReadConsistency;
     else if (event.GetId() == Cmds::Query_TransactionReadDirty)
-        transactionIsolationLevelM = IBPP::ilReadDirty;
+        transactionIsolationLevelM = fr::TransactionIsolationLevel::ReadDirty;
 
     wxCHECK_RET(!isTransactionStarted(),
         "Can't change transaction isolation level while started");
-    transactionM = 0;
+    transactionM = nullptr;
 }
 
 void ExecuteSqlFrame::OnMenuUpdateTransactionIsolationLevel(
@@ -2810,45 +2920,47 @@ void ExecuteSqlFrame::OnMenuUpdateTransactionIsolationLevel(
 {
     event.Enable(!isTransactionStarted());
     if (event.GetId() == Cmds::Query_TransactionConcurrency)
-        event.Check(transactionIsolationLevelM == IBPP::ilConcurrency);
+        event.Check(transactionIsolationLevelM == fr::TransactionIsolationLevel::Concurrency);
     else if (event.GetId() == Cmds::Query_TransactionConsistency)
-        event.Check(transactionIsolationLevelM == IBPP::ilConsistency);
+        event.Check(transactionIsolationLevelM == fr::TransactionIsolationLevel::Consistency);
     else if (event.GetId() == Cmds::Query_TransactionReadCommitted)
-        event.Check(transactionIsolationLevelM == IBPP::ilReadCommitted);
+        event.Check(transactionIsolationLevelM == fr::TransactionIsolationLevel::ReadCommitted);
+    else if (event.GetId() == Cmds::Query_TransactionReadConsistency)
+        event.Check(transactionIsolationLevelM == fr::TransactionIsolationLevel::ReadConsistency);
     else if (event.GetId() == Cmds::Query_TransactionReadDirty)
-        event.Check(transactionIsolationLevelM == IBPP::ilReadDirty);
+        event.Check(transactionIsolationLevelM == fr::TransactionIsolationLevel::ReadDirty);
 }
 
 void ExecuteSqlFrame::OnMenuTransactionLockResolution(wxCommandEvent& event)
 {
     transactionLockResolutionM =
-        event.IsChecked() ? IBPP::lrWait : IBPP::lrNoWait;
+        event.IsChecked() ? fr::TransactionLockResolution::Wait : fr::TransactionLockResolution::NoWait;
 
     wxCHECK_RET(!isTransactionStarted(),
         "Can't change transaction lock resolution while started");
-    transactionM = 0;
+    transactionM = nullptr;
 }
 
 void ExecuteSqlFrame::OnMenuUpdateTransactionLockResolution(
     wxUpdateUIEvent& event)
 {
     event.Enable(!isTransactionStarted());
-    event.Check(transactionLockResolutionM == IBPP::lrWait);
+    event.Check(transactionLockResolutionM == fr::TransactionLockResolution::Wait);
 }
 
 void ExecuteSqlFrame::OnMenuTransactionReadOnly(wxCommandEvent& event)
 {
-    transactionAccessModeM = event.IsChecked() ? IBPP::amRead : IBPP::amWrite;
+    transactionAccessModeM = event.IsChecked() ? fr::TransactionAccessMode::Read : fr::TransactionAccessMode::Write;
 
     wxCHECK_RET(!isTransactionStarted(),
         "Can't change transaction access mode while started");
-    transactionM = 0;
+    transactionM = nullptr;
 }
 
 void ExecuteSqlFrame::OnMenuUpdateTransactionReadOnly(wxUpdateUIEvent& event)
 {
     event.Enable(!isTransactionStarted());
-    event.Check(transactionAccessModeM == IBPP::amRead);
+    event.Check(transactionAccessModeM == fr::TransactionAccessMode::Read);
 }
 
 void ExecuteSqlFrame::OnMenuCommit(wxCommandEvent& WXUNUSED(event))
@@ -2882,8 +2994,8 @@ bool ExecuteSqlFrame::commitTransaction()
         {
             wxStopWatch sw;
             if (statementM != 0)
-                statementM->Close();
-            transactionM->Commit();
+                statementM->close();
+            transactionM->commit();
             log(wxString::Format(_("Transaction committed (elapsed time: %s)."),
                 millisToTimeString(sw.Time()).c_str()));
         }
@@ -2928,25 +3040,10 @@ bool ExecuteSqlFrame::commitTransaction()
             return true;
         }
     }
-    catch (IBPP::LogicException&)
-    {
-        transactionM = 0;
-        statementM = 0;
-        inTransaction(false);
-        executedStatementsM.clear();
-        return true;
-    }
-    catch (IBPP::Exception &e)
+    catch (const std::exception& e)
     {
         splitScreen();
-        log(wxString(e.what(), *databaseM->getCharsetConverter()),
-            ttError);
-        return false;
-    }
-    catch (std::exception &se)
-    {
-        splitScreen();
-        log(wxString(_("ERROR!\n")) + se.what(), ttError);
+        log(wxString(e.what(), *databaseM->getCharsetConverter()), ttError);
         return false;
     }
 
@@ -2986,8 +3083,8 @@ bool ExecuteSqlFrame::rollbackTransaction()
         {
             wxStopWatch sw;
             if (statementM != 0)
-                statementM->Close();
-            transactionM->Rollback();
+                statementM->close();
+            transactionM->rollback();
             log(wxString::Format(_("Transaction rolled back (elapsed time: %s)."),
                 millisToTimeString(sw.Time()).c_str()));
         }
@@ -3002,19 +3099,10 @@ bool ExecuteSqlFrame::rollbackTransaction()
             return true;
         }
     }
-    catch (IBPP::LogicException&)
-    {
-        transactionM = 0;
-        statementM = 0;
-        inTransaction(false);
-        executedStatementsM.clear();
-        return true;
-    }
-    catch (IBPP::Exception &e)
+    catch (const std::exception& e)
     {
         splitScreen();
-        log(wxString(e.what(), *databaseM->getCharsetConverter()),
-            ttError);
+        log(wxString(e.what(), *databaseM->getCharsetConverter()), ttError);
         return false;
     }
     catch (...)
@@ -3228,7 +3316,7 @@ void ExecuteSqlFrame::OnGridLabelLeftDClick(wxGridEvent& event)
     int column = 1 + event.GetCol();
     if (column < 1 || column > table->GetNumberCols())
         return;
-    SelectStatement sstm(wxString(statementM->Sql().c_str(),
+    SelectStatement sstm(wxString(statementM->getSql().c_str(),
         *databaseM->getCharsetConverter()));
 
     // rebuild SQL statement with different ORDER BY clause
@@ -3296,8 +3384,14 @@ void ExecuteSqlFrame::setKeywords()
     // so it can reload this list if something changes
 
     const DatabaseInfo& dbInfo(databaseM->getInfo());
+    int odsMajor = dbInfo.getODS();
+    int odsMinor = dbInfo.getODSMinor();
+
     wxArrayString as(SqlTokenizer::getKeywords(SqlTokenizer::kwDefaultCase,
-        dbInfo.getODS(), dbInfo.getODSMinor()));
+        odsMajor, odsMinor));
+
+    // Update syntax highlighting keywords
+    styled_text_ctrl_sql->setKeywords(odsMajor, odsMinor);
 
     // get list od database objects' names
     std::vector<Identifier> v;

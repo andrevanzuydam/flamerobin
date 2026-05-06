@@ -56,6 +56,7 @@
 #include "gui/ExecuteSql.h"
 #include "gui/ExecuteSqlFrame.h"
 #include "gui/MainFrame.h"
+#include "gui/MaintenanceFrame.h"
 #include "gui/MetadataItemPropertiesFrame.h"
 #include "gui/PreferencesDialog.h"
 #include "gui/ProgressDialog.h"
@@ -64,6 +65,7 @@
 #include "gui/SimpleHtmlFrame.h"
 #include "gui/ShutdownFrame.h"
 #include "gui/StartupFrame.h"
+#include "gui/UpdateChecker.h"
 #include "main.h"
 #include "metadata/column.h"
 #include "metadata/domain.h"
@@ -184,6 +186,12 @@ MainFrame::MainFrame(wxWindow* parent, int id, const wxString& title,
         searchPanelSizerM->Show(searchPanelM, false, true);    // recursive
         searchPanelSizerM->Layout();
     }
+
+    bool autoUpdate = false;
+    if (config().getValue("checkForUpdates", autoUpdate) && autoUpdate)
+    {
+        UpdateChecker::check(this, true);
+    }
 }
 
 void MainFrame::buildMainMenu()
@@ -259,6 +267,7 @@ void MainFrame::buildMainMenu()
     helpMenu->Append(Cmds::Menu_URLProjectPage, _("Github &project page"));
     helpMenu->Append(Cmds::Menu_URLFeatureRequest, _("Github &feature requests"));
     helpMenu->Append(Cmds::Menu_URLBugReport, _("Github &bug reports"));
+    helpMenu->Append(Cmds::Menu_CheckForUpdates, _("&Check for updates..."));
 #ifndef __WXMAC__
     helpMenu->AppendSeparator();
 #endif
@@ -374,8 +383,8 @@ EVT_MENU(Cmds::Menu_URLHomePage, MainFrame::OnMenuURLHomePage)
 EVT_MENU(Cmds::Menu_URLProjectPage, MainFrame::OnMenuURLProjectPage)
 EVT_MENU(Cmds::Menu_URLFeatureRequest, MainFrame::OnMenuURLFeatureRequest)
 EVT_MENU(Cmds::Menu_URLBugReport, MainFrame::OnMenuURLBugReport)
+EVT_MENU(Cmds::Menu_CheckForUpdates, MainFrame::OnMenuCheckForUpdates)
 EVT_MENU(wxID_PREFERENCES, MainFrame::OnMenuConfigure)
-
 EVT_MENU(Cmds::Menu_NewVolatileSQLEditor, MainFrame::OnMenuNewVolatileSQLEditor)
 EVT_MENU(Cmds::Menu_RegisterDatabase, MainFrame::OnMenuRegisterDatabase)
 EVT_UPDATE_UI(Cmds::Menu_RegisterDatabase, MainFrame::OnMenuUpdateIfServerSelected)
@@ -406,8 +415,9 @@ EVT_MENU(Cmds::Menu_DatabaseRegistrationInfo, MainFrame::OnMenuDatabaseRegistrat
 EVT_UPDATE_UI(Cmds::Menu_DatabaseRegistrationInfo, MainFrame::OnMenuUpdateIfDatabaseSelected)
 EVT_MENU(Cmds::Menu_Backup, MainFrame::OnMenuBackup)
 EVT_UPDATE_UI(Cmds::Menu_Backup, MainFrame::OnMenuUpdateIfDatabaseSelected)
-EVT_MENU(Cmds::Menu_Restore, MainFrame::OnMenuRestore)
-EVT_UPDATE_UI(Cmds::Menu_Restore, MainFrame::OnMenuUpdateIfDatabaseNotConnected)
+EVT_MENU(Cmds::Menu_Maintenance, MainFrame::OnMenuMaintenance)
+EVT_UPDATE_UI(Cmds::Menu_Maintenance, MainFrame::OnMenuUpdateIfDatabaseSelected)
+EVT_MENU(Cmds::Menu_Restore, MainFrame::OnMenuRestore)EVT_UPDATE_UI(Cmds::Menu_Restore, MainFrame::OnMenuUpdateIfDatabaseNotConnected)
 EVT_MENU(Cmds::Menu_Connect, MainFrame::OnMenuConnect)
 EVT_UPDATE_UI(Cmds::Menu_Connect, MainFrame::OnMenuUpdateIfDatabaseNotConnected)
 EVT_MENU(Cmds::Menu_ConnectAs, MainFrame::OnMenuConnectAs)
@@ -685,6 +695,8 @@ void MainFrame::OnTreeItemActivate(wxTreeEvent& event)
             case ntDDLTrigger:
             case ntDMLTrigger:
             case ntException:
+            case ntPublication:
+            case ntReplication:
             case ntRole:
             case ntSysRole:
             case ntIndex:
@@ -793,6 +805,11 @@ void MainFrame::OnMenuURLFeatureRequest(wxCommandEvent& WXUNUSED(event))
 void MainFrame::OnMenuURLBugReport(wxCommandEvent& WXUNUSED(event))
 {
     showUrl("https://github.com/mariuz/flamerobin/issues");
+}
+
+void MainFrame::OnMenuCheckForUpdates(wxCommandEvent& WXUNUSED(event))
+{
+    UpdateChecker::check(this);
 }
 
 void MainFrame::OnMenuConfigure(wxCommandEvent& WXUNUSED(event))
@@ -1241,14 +1258,14 @@ void MainFrame::OnMenuGetServerVersion(wxCommandEvent& WXUNUSED(event))
         // retieving is complete
         ProgressDialog pd(this, _("Retrieving server version"), 1);
         pd.doShow();
-        IBPP::Service svc;
-        if (!getService(s.get(), svc, &pd, false))    // false = no need for sysdba
+        fr::IServicePtr svc = s->getDALService(&pd, false);    // false = no need for sysdba
+        if (!svc)
             return;
-        svc->GetVersion(version);
+        version = svc->getVersion();
     }
-    catch (IBPP::Exception& e)
+    catch (const std::exception& e)
     {
-        wxMessageBox(e.what(), _("Error"));
+        wxMessageBox(wxString::FromUTF8(e.what()), _("Error"));
         return;
     }
 
@@ -1300,6 +1317,22 @@ void MainFrame::OnMenuBackup(wxCommandEvent& WXUNUSED(event))
     }
     bf = new BackupFrame(this, db);
     bf->Show();
+}
+
+void MainFrame::OnMenuMaintenance(wxCommandEvent& WXUNUSED(event))
+{
+    DatabasePtr db = getDatabase(treeMainM->getSelectedMetadataItem());
+    if (!checkValidDatabase(db))
+        return;
+
+    MaintenanceFrame* mf = MaintenanceFrame::findFrameFor(db);
+    if (mf)
+    {
+        mf->Raise();
+        return;
+    }
+    mf = new MaintenanceFrame(this, db);
+    mf->Show();
 }
 
 void MainFrame::OnMenuRestore(wxCommandEvent& WXUNUSED(event))

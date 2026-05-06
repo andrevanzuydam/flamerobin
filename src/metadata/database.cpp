@@ -43,10 +43,12 @@
 
 #include "config/Config.h"
 #include "config/DatabaseConfig.h"
+#include "engine/db/DatabaseFactory.h"
 #include "core/FRError.h"
 #include "core/ProgressIndicator.h"
 #include "core/StringUtils.h"
 #include "engine/MetadataLoader.h"
+#include "engine/db/ibpp/IbppDatabase.h"
 #include "MasterPassword.h"
 #include "metadata/CharacterSet.h"
 #include "metadata/column.h"
@@ -60,6 +62,7 @@
 #include "metadata/parameter.h"
 #include "metadata/package.h"
 #include "metadata/procedure.h"
+#include "metadata/publication.h"
 #include "metadata/role.h"
 #include "metadata/root.h"
 #include "metadata/server.h"
@@ -204,16 +207,42 @@ int DatabaseInfo::getSweep() const
     return sweepM;
 }
 
-void DatabaseInfo::load(const IBPP::Database database)
+void DatabaseInfo::load(fr::IDatabasePtr database)
 {
-    database->Info(&odsM, &odsMinorM, &pageSizeM, &pagesM,
-        &buffersM, &sweepM, &forcedWritesM, &reserveM, &readOnlyM);
-    database->TransactionInfo(&oldestTransactionM, &oldestActiveTransactionM,
-        &oldestSnapshotM, &nextTransactionM);
+    fr::DatabaseInfoData data;
+    database->getInfo(&data);
+
+    odsM = data.ods;
+    odsMinorM = data.odsMinor;
+    pageSizeM = data.pageSize;
+    pagesM = data.pages;
+    buffersM = data.buffers;
+    sweepM = data.sweep;
+    forcedWritesM = data.forcedWrites;
+    reserveM = data.reserve;
+    readOnlyM = data.readOnly;
+
+    oldestTransactionM = data.oldestTransaction;
+    oldestActiveTransactionM = data.oldestActiveTransaction;
+    oldestSnapshotM = data.oldestSnapshot;
+    nextTransactionM = data.nextTransaction;
+    cryptStateM = data.cryptState;
+    activeTransactionsM = data.activeTransactions;
+
     loadTimeMillisM = ::wxGetLocalTimeMillis();
 }
 
-void DatabaseInfo::reloadIfNecessary(const IBPP::Database database)
+int DatabaseInfo::getCryptState() const
+{
+    return cryptStateM;
+}
+
+const std::vector<fr::TransactionInfo>& DatabaseInfo::getActiveTransactions() const
+{
+    return activeTransactionsM;
+}
+
+void DatabaseInfo::reloadIfNecessary(fr::IDatabasePtr database)
 {
     wxLongLong millisNow = ::wxGetLocalTimeMillis();
     // value may jump or even actually decrease, for instance on timezone
@@ -225,7 +254,7 @@ void DatabaseInfo::reloadIfNecessary(const IBPP::Database database)
 
 // DatabaseAuthenticationMode class
 DatabaseAuthenticationMode::DatabaseAuthenticationMode()
-    : modeM(UseSavedPassword)
+    : modeM(UseSavedEncryptedPwd)
 {
 }
 
@@ -305,6 +334,7 @@ Database::Database()
     : MetadataItem(ntDatabase), metadataLoaderM(0), connectedM(false),
         connectionCredentialsM(0), dialectM(3), idM(0), volatileM(false)
 {
+    databaseDAL_M = fr::DatabaseFactory::createDatabase();
     defaultTimezoneM.name = "";
     defaultTimezoneM.id = 0;
 }
@@ -389,16 +419,15 @@ wxString Database::loadDomainNameForColumn(const wxString& table,
     MetadataLoaderTransaction tr(loader);
     wxMBConv* converter = getCharsetConverter();
 
-    IBPP::Statement& st1 = loader->getStatement(
+    fr::IStatementPtr& st1 = loader->getStatement(
         "select rdb$field_source from rdb$relation_fields"
         " where rdb$relation_name = ? and rdb$field_name = ?"
     );
-    st1->Set(1, wx2std(table, converter));
-    st1->Set(2, wx2std(field, converter));
-    st1->Execute();
-    st1->Fetch();
-    std::string domain;
-    st1->Get(1, domain);
+    st1->setString(0, wx2std(table, converter));
+    st1->setString(1, wx2std(field, converter));
+    st1->execute();
+    st1->fetch();
+    std::string domain = st1->getString(0);
     return std2wxIdentifier(domain, converter);
 }
 
@@ -478,24 +507,22 @@ void Database::loadCollations()
     MetadataLoaderTransaction tr(loader);
     wxMBConv* converter = getCharsetConverter();
 
-    IBPP::Statement& st1 = loader->getStatement(
+    fr::IStatementPtr& st1 = loader->getStatement(
         "select c.rdb$character_set_name, k.rdb$collation_name, "
         " c.RDB$CHARACTER_SET_ID, c.RDB$BYTES_PER_CHARACTER "
         " from rdb$character_sets c"
         " left outer join rdb$collations k "
         "   on c.rdb$character_set_id = k.rdb$character_set_id "
         " order by c.rdb$character_set_name, k.rdb$collation_id");
-    st1->Execute();
-    while (st1->Fetch())
+    st1->execute();
+    while (st1->fetch())
     {
-        std::string s;
-        st1->Get(1, s);
+        std::string s = st1->getString(0);
         wxString charset(std2wxIdentifier(s, converter));
-        st1->Get(2, s);
+        s = st1->getString(1);
         wxString collation(std2wxIdentifier(s, converter));
-        int charsetId, bytesPerChar;
-        st1->Get(3, &charsetId);
-        st1->Get(4, &bytesPerChar);
+        int charsetId = st1->getInt32(2);
+        int bytesPerChar = st1->getInt32(3);
         //CharacterSet cs(charset, charsetId, bytesPerChar);
         //collationsM.insert(std::multimap<CharacterSet, wxString>::value_type(
         //    cs, collation));
@@ -507,16 +534,15 @@ wxString Database::getTableForIndex(const wxString& indexName)
     MetadataLoader* loader = getMetadataLoader();
     MetadataLoaderTransaction tr(loader);
 
-    IBPP::Statement& st1 = loader->getStatement(
+    fr::IStatementPtr& st1 = loader->getStatement(
         "SELECT rdb$relation_name from rdb$indices where rdb$index_name = ?");
-    st1->Set(1, wx2std(indexName, getCharsetConverter()));
-    st1->Execute();
+    st1->setString(0, wx2std(indexName, getCharsetConverter()));
+    st1->execute();
 
     wxString tableName;
-    if (st1->Fetch())
+    if (st1->fetch())
     {
-        std::string s;
-        st1->Get(1, s);
+        std::string s = st1->getString(0);
         tableName = std2wxIdentifier(s, getCharsetConverter());
     }
     return tableName;
@@ -1050,28 +1076,24 @@ void Database::parseCommitedSql(const SqlStatement& stm)
 
 void Database::create(int pagesize, int dialect)
 {
-    wxString extra_params;
-    if (pagesize)
-        extra_params << " PAGE_SIZE " << pagesize;
-
-    wxString charset(getConnectionCharset());
-    if (!charset.empty())
-        extra_params << " DEFAULT CHARACTER SET " << charset;
-
     bool useUserNamePwd = !authenticationModeM.getIgnoreUsernamePassword();
-    IBPP::Database db = IBPP::DatabaseFactory("",
-        wx2std(getConnectionString()),
+
+    databaseDAL_M->setConnectionString(wx2std(getConnectionString()));
+    databaseDAL_M->setCredentials(
         (useUserNamePwd ? wx2std(getUsername()) : ""),
-        (useUserNamePwd ? wx2std(getDecryptedPassword()) : ""),
-        "", wx2std(charset), wx2std(extra_params),
-        wx2std(getClientLibrary()), wx2std(getCryptKeyData())
+        (useUserNamePwd ? wx2std(getDecryptedPassword()) : "")
     );
-    db->Create(dialect);
+    databaseDAL_M->setRole(wx2std(getRole()));
+    databaseDAL_M->setCharset(wx2std(getConnectionCharset()));
+    databaseDAL_M->setClientLibrary(wx2std(getClientLibrary()));
+    databaseDAL_M->setCryptKeyData(wx2std(getCryptKeyData()));
+
+    databaseDAL_M->create(pagesize, dialect);
 }
 
 void Database::drop()
 {
-    databaseM->Drop();
+    databaseDAL_M->drop();
     setDisconnected();
 }
 
@@ -1081,8 +1103,8 @@ void Database::reconnect()
     delete metadataLoaderM;
     metadataLoaderM = 0;
 
-    databaseM->Disconnect();
-    databaseM->Connect();
+    databaseDAL_M->disconnect();
+    databaseDAL_M->connect();
 }
 
 // the caller of this function should check whether the database object has the
@@ -1102,29 +1124,33 @@ void Database::connect(const wxString& password, ProgressIndicator* indicator)
             indicator->initProgressIndeterminate("Establishing connection...");
         }
 
-        databaseM.clear();
+        // databaseM.clear(); removed
 
         auto connect = [this, &password]() {
             bool useUserNamePwd = !authenticationModeM.getIgnoreUsernamePassword();
-            IBPP::Database db = IBPP::DatabaseFactory("",
-                wx2std(getConnectionString()),
+
+            databaseDAL_M->setConnectionString(wx2std(getConnectionString()));
+            databaseDAL_M->setCredentials(
                 (useUserNamePwd ? wx2std(getUsername()) : ""),
-                (useUserNamePwd ? wx2std(password) : ""),
-                wx2std(getRole()), wx2std(getConnectionCharset()), 
-                "", wx2std(getClientLibrary()), wx2std(getCryptKeyData())
+                (useUserNamePwd ? wx2std(password) : "")
             );
-            db->Connect();  // As standard, will block for 180 seconds or until connected
-            return db;
+            databaseDAL_M->setRole(wx2std(getRole()));
+            databaseDAL_M->setCharset(wx2std(getConnectionCharset()));
+            databaseDAL_M->setClientLibrary(wx2std(getClientLibrary()));
+            databaseDAL_M->setCryptKeyData(wx2std(getCryptKeyData()));
+
+            databaseDAL_M->connect();
         };
 
         if (indicator)
         {
             // We can't just do a std::async here, we need to detach the thread to allow for user canceling
-            std::promise<IBPP::Database> promise;
+            std::promise<void> promise;
             auto future = promise.get_future();
-            std::thread thread([&connect](std::promise<IBPP::Database> p) {
+            std::thread thread([&connect](std::promise<void> p) {
                 try {
-                    p.set_value(connect());
+                    connect();
+                    p.set_value();
                 }
                 catch (...) {
                     try {
@@ -1151,14 +1177,14 @@ void Database::connect(const wxString& password, ProgressIndicator* indicator)
             if (!indicator->isCanceled())
             {
                 // Will throw exception in this thread context if Connect() call failed
-                databaseM = future.get();
+                future.get();
             }
         } else
         {
-            databaseM = connect();
+            connect();
         }
 
-        if (databaseM != 0 && databaseM->Connected())
+        if (databaseDAL_M->isConnected())
         {
             connectedM = true;
 
@@ -1208,6 +1234,8 @@ void Database::connect(const wxString& password, ProgressIndicator* indicator)
             initializeLockCount(DDLTriggersM, lockCount);
             indicesM.reset(new Indices(me));
             initializeLockCount(indicesM, lockCount);
+            replicationM.reset(new Replication(me));
+            initializeLockCount(replicationM, lockCount);
             sysIndicesM.reset(new SysIndices(me));
             initializeLockCount(sysIndicesM, lockCount);
             usrIndicesM.reset(new UsrIndices(me));
@@ -1229,8 +1257,8 @@ void Database::connect(const wxString& password, ProgressIndicator* indicator)
                 checkProgressIndicatorCanceled(indicator);
                 // load database information
                 setPropertiesLoaded(false);
-                dialectM = databaseM->Dialect();
-                databaseInfoM.load(databaseM);
+                dialectM = databaseDAL_M->getDialect();
+                databaseInfoM.load(databaseDAL_M);
                 setPropertiesLoaded(true);
 
                 // load default timezone
@@ -1256,7 +1284,7 @@ void Database::connect(const wxString& password, ProgressIndicator* indicator)
         try
         {
             disconnect();
-            databaseM.clear();
+            // databaseM.clear(); removed
         }
         catch (...) // we don't care as we already have an error to report
         {
@@ -1385,28 +1413,26 @@ void Database::loadDatabaseInfo()
     stmt += getInfo().getODSVersionIsHigherOrEqualTo(12, 0) ? " rdb$linger, " : " null, ";
     stmt += getInfo().getODSVersionIsHigherOrEqualTo(13, 0) ? " rdb$sql_security   " : " null  ";
     stmt += " from rdb$database ";
-    IBPP::Statement& st1 = loader->getStatement(stmt);
+    fr::IStatementPtr& st1 = loader->getStatement(stmt);
 
-    st1->Execute();
-    if (st1->Fetch())
+    st1->execute();
+    if (st1->fetch())
     {
-        std::string s;
-        st1->Get(1, s);
+        std::string s = st1->getString(0);
         databaseCharsetM = std2wxIdentifier(s, getCharsetConverter());
-        st1->Get(2, s);
+        s = st1->getString(1);
         connectionUserM = std2wxIdentifier(s, getCharsetConverter());
-        st1->Get(3, s);
+        s = st1->getString(2);
         connectionRoleM = std2wxIdentifier(s, getCharsetConverter());
         if (connectionRoleM == "NONE")
             connectionRoleM.clear();
-        if (!st1->IsNull(4))
-            st1->Get(4, lingerM);
+        if (!st1->isNull(3))
+            lingerM = st1->getInt32(3);
         else
             lingerM = 0;
-        if (!st1->IsNull(5))
+        if (!st1->isNull(4))
         {
-            bool b;
-            st1->Get(5, b);
+            bool b = st1->getBool(4);
             sqlSecurityM = wxString(b ? "SQL SECURITY DEFINER" : "SQL SECURITY INVOKER");
         }
         else
@@ -1421,18 +1447,17 @@ wxArrayString Database::loadIdentifiers(const wxString& loadStatement,
     MetadataLoaderTransaction tr(loader);
     wxMBConv* converter = getCharsetConverter();
 
-    IBPP::Statement& st1 = loader->getStatement(
+    fr::IStatementPtr& st1 = loader->getStatement(
         wx2std(loadStatement, getCharsetConverter()));
-    st1->Execute();
+    st1->execute();
 
     wxArrayString names;
-    while (st1->Fetch())
+    while (st1->fetch())
     {
         checkProgressIndicatorCanceled(progressIndicator);
-        if (!st1->IsNull(1))
+        if (!st1->isNull(0))
         {
-            std::string s;
-            st1->Get(1, s);
+            std::string s = st1->getString(0);
             names.push_back(std2wxIdentifier(s, converter));
         }
     }
@@ -1443,7 +1468,7 @@ void Database::disconnect()
 {
     if (connectedM)
     {
-        databaseM->Disconnect();
+        databaseDAL_M->disconnect();
         setDisconnected();
     }
 }
@@ -1633,6 +1658,13 @@ TablesPtr Database::getTables()
     return tablesM;
 }
 
+ReplicationPtr Database::getReplication()
+{
+    wxASSERT(replicationM);
+    replicationM->ensureChildrenLoaded();
+    return replicationM;
+}
+
 DMLTriggersPtr Database::getDMLTriggers()
 {
     wxASSERT(DMLtriggersM);
@@ -1720,6 +1752,8 @@ void Database::getCollections(std::vector<MetadataItem*>& temp, bool system)
     if (system && showSystemTables())
         temp.push_back(sysTablesM.get());
     temp.push_back(tablesM.get());
+    if (getInfo().getODSVersionIsHigherOrEqualTo(13.0))
+        temp.push_back(replicationM.get());
     temp.push_back(DMLtriggersM.get());
     temp.push_back(UDFsM.get());
     temp.push_back(viewsM.get());
@@ -1873,8 +1907,8 @@ wxString Database::getRawPassword() const
 wxString Database::getDecryptedPassword() const
 {
     // if we already have an established connection return that password
-    if (databaseM != 0 && databaseM->Connected())
-        return databaseM->UserPassword();
+    if (databaseDAL_M->isConnected())
+        return wxString::FromUTF8(databaseDAL_M->getUserPassword().c_str());
 
     // temporary connection
     if (connectionCredentialsM)
@@ -1910,9 +1944,20 @@ wxString Database::getCryptKeyData() const
         return credentialsM.getCryptKeyData();
 }
 
-IBPP::Database& Database::getIBPPDatabase()
+IBPP::Database Database::getIBPPDatabase()
 {
-    return databaseM;
+    if (databaseDAL_M->getBackendType() == fr::DatabaseBackend::IBPP)
+    {
+        auto ibppDb = std::dynamic_pointer_cast<fr::IbppDatabase>(databaseDAL_M);
+        if (ibppDb)
+            return ibppDb->getIBPPDatabase();
+    }
+    return IBPP::Database();
+}
+
+fr::IDatabasePtr Database::getDALDatabase() const
+{
+    return databaseDAL_M;
 }
 
 void Database::setIsVolatile(const bool isVolatile)
@@ -2074,15 +2119,25 @@ void Database::setUIDGeneratorValue(unsigned value)
 
 const DatabaseInfo& Database::getInfo()
 {
-    databaseInfoM.reloadIfNecessary(databaseM);
+    databaseInfoM.reloadIfNecessary(databaseDAL_M);
     return databaseInfoM;
 }
 
 void Database::loadInfo()
 {
-    databaseInfoM.load(databaseM);
+    databaseInfoM.load(databaseDAL_M);
     loadDatabaseInfo();
     notifyObservers();
+}
+
+int Database::getODSMajor() const
+{
+    return databaseInfoM.odsM;
+}
+
+int Database::getODSMinor() const
+{
+    return databaseInfoM.odsMinorM;
 }
 
 bool Database::showSystemCharacterSet()
@@ -2219,10 +2274,10 @@ wxMBConv* Database::getCharsetConverter() const
 
 void Database::getConnectedUsers(wxArrayString& users) const
 {
-    if (databaseM != 0 && databaseM->Connected())
+    if (databaseDAL_M->isConnected())
     {
         std::vector<std::string> userNames;
-        databaseM->Users(userNames);
+        databaseDAL_M->getConnectedUsers(userNames);
 
         // replace multiple occurences of same user name by "username (N)"
         std::map<std::string, size_t> counts;
@@ -2275,23 +2330,46 @@ void Database::loadDefaultTimezone()
         std::lock_guard<std::mutex> lock(timezoneDataMutexM);
         defaultTimezoneM.name.clear();
         defaultTimezoneM.id = 0;
+        databaseTimezoneM.name.clear();
+        databaseTimezoneM.id = 0;
         return;
     }
 
-    IBPP::Statement& st1 = loader->getStatement(
+    // Session Timezone
+    fr::IStatementPtr& st1 = loader->getStatement(
         "select z.RDB$TIME_ZONE_ID, "
         "       z.RDB$TIME_ZONE_NAME "
         "from RDB$TIME_ZONES z "
         "where z.RDB$TIME_ZONE_NAME = RDB$GET_CONTEXT('SYSTEM', 'SESSION_TIMEZONE');");
 
-    st1->Execute();
-    st1->Fetch();
-    st1->Get(1, tzId);
-    st1->Get(2, tzName);
+    st1->execute();
+    if (st1->fetch())
+    {
+        tzId = st1->getInt32(0);
+        tzName = st1->getString(1);
 
-    std::lock_guard<std::mutex> lock(timezoneDataMutexM);
-    defaultTimezoneM.id = tzId;
-    defaultTimezoneM.name = std2wxIdentifier(tzName, converter);
+        std::lock_guard<std::mutex> lock(timezoneDataMutexM);
+        defaultTimezoneM.id = tzId;
+        defaultTimezoneM.name = std2wxIdentifier(tzName, converter);
+    }
+
+    // Database Timezone
+    fr::IStatementPtr& st2 = loader->getStatement(
+        "select z.RDB$TIME_ZONE_ID, "
+        "       z.RDB$TIME_ZONE_NAME "
+        "from RDB$TIME_ZONES z "
+        "where z.RDB$TIME_ZONE_NAME = RDB$GET_CONTEXT('SYSTEM', 'DATABASE_TIMEZONE');");
+
+    st2->execute();
+    if (st2->fetch())
+    {
+        tzId = st2->getInt32(0);
+        tzName = st2->getString(1);
+
+        std::lock_guard<std::mutex> lock(timezoneDataMutexM);
+        databaseTimezoneM.id = tzId;
+        databaseTimezoneM.name = std2wxIdentifier(tzName, converter);
+    }
 }
 
 void Database::clearTimezones(bool clearDefaultTimezone)
@@ -2307,6 +2385,8 @@ void Database::clearTimezones(bool clearDefaultTimezone)
     {
         defaultTimezoneM.name.clear();
         defaultTimezoneM.id = 0;
+        databaseTimezoneM.name.clear();
+        databaseTimezoneM.id = 0;
     }
 }
 
@@ -2325,20 +2405,20 @@ void Database::loadTimezones()
         return;
     }
 
-    IBPP::Statement& st1 = loader->getStatement(
+    fr::IStatementPtr& st1 = loader->getStatement(
         "select z.RDB$TIME_ZONE_ID, "
         "       z.RDB$TIME_ZONE_NAME "
         "from RDB$TIME_ZONES z");
 
-    st1->Execute();
+    st1->execute();
     std::vector<TimezoneInfo*> loadedTimezones;
 
     try
     {
-        while (st1->Fetch())
+        while (st1->fetch())
         {
-            st1->Get(1, tzId);
-            st1->Get(2, tzName);
+            tzId = st1->getInt32(0);
+            tzName = st1->getString(1);
 
             tzItm = new TimezoneInfo;
             tzItm->id = tzId;
@@ -2373,6 +2453,13 @@ TimezoneInfo Database::getDefaultTimezone()
     loadDefaultTimezone();
     std::lock_guard<std::mutex> lock(timezoneDataMutexM);
     return defaultTimezoneM;
+}
+
+TimezoneInfo Database::getDatabaseTimezone()
+{
+    loadDefaultTimezone();
+    std::lock_guard<std::mutex> lock(timezoneDataMutexM);
+    return databaseTimezoneM;
 }
 
 wxString Database::getTimezoneName(int timezone)

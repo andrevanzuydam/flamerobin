@@ -69,6 +69,9 @@
 #define ART_PrimaryAndForeignKey    wxART_MAKE_ART_ID(ART_PrimaryAndForeignKey)
 #define ART_Procedure               wxART_MAKE_ART_ID(ART_Procedure)
 #define ART_Procedures              wxART_MAKE_ART_ID(ART_Procedures)
+#define ART_Publication             wxART_MAKE_ART_ID(ART_Publication)
+#define ART_Publications            wxART_MAKE_ART_ID(ART_Publications)
+#define ART_Replication             wxART_MAKE_ART_ID(ART_Replication)
 #define ART_Role                    wxART_MAKE_ART_ID(ART_Role)
 #define ART_Roles                   wxART_MAKE_ART_ID(ART_Roles)
 #define ART_Root                    wxART_MAKE_ART_ID(ART_Root)
@@ -101,6 +104,7 @@
 #define ART_History                 wxART_MAKE_ART_ID(ART_History)
 #define ART_ExecuteStatement        wxART_MAKE_ART_ID(ART_ExecuteStatement)
 #define ART_ShowExecutionPlan       wxART_MAKE_ART_ID(ART_ShowExecutionPlan)
+#define ART_ShowProfiler            wxART_MAKE_ART_ID(ART_ShowProfiler)
 #define ART_CommitTransaction       wxART_MAKE_ART_ID(ART_CommitTransaction)
 #define ART_RollbackTransaction     wxART_MAKE_ART_ID(ART_RollbackTransaction)
 

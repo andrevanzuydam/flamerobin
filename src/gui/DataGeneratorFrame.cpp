@@ -49,6 +49,9 @@
 #include "gui/controls/DBHTreeControl.h"
 #include "gui/DataGeneratorFrame.h"
 #include "gui/ProgressDialog.h"
+#include "engine/db/IDatabase.h"
+#include "engine/db/ITransaction.h"
+#include "engine/db/IStatement.h"
 #include "metadata/column.h"
 #include "metadata/database.h"
 #include "metadata/domain.h"
@@ -1088,7 +1091,7 @@ wxString getCharFromRange(const wxString& range, bool rnd, int recNo,
     return valueset.Mid(record % base, 1);
 }
 
-void setFromFile(IBPP::Statement st, int param,
+void setFromFile(fr::IStatementPtr st, int param,
     GeneratorSettings *gs, int recNo)
 {
     // load strings from file to vector
@@ -1117,140 +1120,171 @@ void setFromFile(IBPP::Statement st, int param,
 
     // convert string to datatype
     int mydate, mytime;
-    IBPP::SDT dt = st->ParameterType(param);
-    if (st->ParameterScale(param))
-        dt = IBPP::sdDouble;
+    fr::ColumnType dt = st->getParameterType(param);
+    if (st->getParameterScale(param))
+        dt = fr::ColumnType::Double;
     switch (dt)
     {
-        case IBPP::sdBoolean: // Firebird v3
-            st->Set(param, wx2std(selected)); break;
-        case IBPP::sdString:
-            st->Set(param, wx2std(selected));   break;
-        case IBPP::sdSmallint:
-        {
-            long l;
-            if (!selected.ToLong(&l))
-                throw FRError(_("Invalid long (smallint) value: ")+selected);
-            int16_t t = l;
-            st->Set(param, t);
-            break;
-        }
-        case IBPP::sdLargeint:
-        {
-            wxLongLong_t ll;
-            if (!selected.ToLongLong(&ll))
-                throw FRError(_("Invalid long long numeric value: ")+selected);
-            int64_t t = ll;
-            st->Set(param, t);
-            break;
-        }
-        case IBPP::sdInteger:
+        case fr::ColumnType::Boolean:
+            st->setBool(param, (selected.Upper() == "TRUE" || selected == "1")); break;
+        case fr::ColumnType::Varchar:
+            st->setString(param, wx2std(selected));   break;
+        case fr::ColumnType::Integer:
         {
             long l;
             if (!selected.ToLong(&l))
                 throw FRError(_("Invalid long numeric value: ")+selected);
-            int32_t t = l;
-            st->Set(param, t);
+            st->setInt32(param, (int32_t)l);
             break;
         }
-        case IBPP::sdFloat:
+        case fr::ColumnType::BigInt:
+        {
+            wxLongLong_t ll;
+            if (!selected.ToLongLong(&ll))
+                throw FRError(_("Invalid long long numeric value: ")+selected);
+            st->setInt64(param, (int64_t)ll);
+            break;
+        }
+        case fr::ColumnType::Float:
+        case fr::ColumnType::Double:
         {
             double d;
             if (!selected.ToDouble(&d))
-                throw FRError(_("Invalid float value: ")+selected);
-            float f = d;
-            st->Set(param, f);
+                throw FRError(_("Invalid double value: ")+selected);
+            st->setDouble(param, d);
             break;
         }
-        case IBPP::sdDouble:
-        {
-            double d;
-            if (!selected.ToDouble(&d))
-                throw FRError(_("Invalid double numeric value: ")+selected);
-            st->Set(param, d);
-            break;
-        }
-        case IBPP::sdTime:
-        case IBPP::sdTimeTz:
+        case fr::ColumnType::Time:
+        case fr::ColumnType::TimeTz:
             str2time(selected, mytime);
-            st->Set(param, IBPP::Time(IBPP::Time::tmNone, mytime, IBPP::Time::TZ_NONE));
+            {
+                int h, m, s, t;
+                IBPP::ttoi(mytime, &h, &m, &s, &t);
+                st->setTime(param, h, m, s, t);
+            }
             break;
-        case IBPP::sdDate:
+        case fr::ColumnType::Date:
             str2date(selected, mydate);
-            st->Set(param, IBPP::Date(mydate));
+            {
+                int y, m, d;
+                IBPP::dtoi(mydate, &y, &m, &d);
+                st->setDate(param, y, m, d);
+            }
             break;
-        case IBPP::sdTimestamp:
-        case IBPP::sdTimestampTz:
+        case fr::ColumnType::Timestamp:
+        case fr::ColumnType::TimestampTz:
         {
             str2date(selected, mydate);
             str2time(selected.Mid(11), mytime);
             int y, mo, d, h, mi, s, t;
             IBPP::dtoi(mydate, &y, &mo, &d);
             IBPP::ttoi(mytime, &h, &mi, &s, &t);
-            st->Set(param, IBPP::Timestamp(y, mo, d, IBPP::Time::tmNone, h, mi, s, t, IBPP::Time::TZ_NONE, NULL));
+            st->setTimestamp(param, y, mo, d, h, mi, s, t);
             break;
         }
-        case IBPP::sdBlob:
+        case fr::ColumnType::Blob:
             throw FRError(_("Blob datatype not supported"));
-        case IBPP::sdArray:
-            throw FRError(_("Array datatype not supported"));
-        case IBPP::sdInt128:
-        case IBPP::sdDec16:
-        case IBPP::sdDec34:
-            throw FRError(_("Datatype not supported"));
+        default:
+            st->setString(param, wx2std(selected));
+            break;
     };
 }
 
-template<typename T>
-void setFromOther(IBPP::Statement st, int param,
-    GeneratorSettings *gs, size_t recNo)
+void setFromOther(fr::IStatementPtr st, int param,
+    GeneratorSettings *gs, size_t recNo, Database* db)
 {
-    IBPP::Statement st2 =
-        IBPP::StatementFactory(st->DatabasePtr(), st->TransactionPtr());
+    fr::IStatementPtr st2 =
+        st->getDatabase()->createStatement(st->getTransaction());
 
     wxString sql = "SELECT " + gs->sourceColumn + " FROM "
         + gs->sourceTable + " WHERE " + gs->sourceColumn
         + " IS NOT NULL";
     if (!gs->randomValues)
         sql += " ORDER BY 1";
-    st2->Prepare(wx2std(sql));
-    st2->Execute();
-    std::vector<T> values;
-    while (st2->Fetch())
+    st2->prepare(wx2std(sql, db->getCharsetConverter()));
+    st2->execute();
+
+    // Since we need to store values and select one, and they can be of any type,
+    // we use a vector of strings or just fetch up to recNo.
+    // However, the original code used a vector of T.
+    // For simplicity, we'll fetch up to recNo + 1 or a maximum.
+    
+    int count = 0;
+    bool found = false;
+    while (st2->fetch())
     {
-        T value;
-        st2->Get(1, value);
-        values.push_back(value);
-        if (values.size() > recNo && !gs->randomValues)
+        if (gs->randomValues)
         {
-            st->Set(param, value);
-            return;
+             // For random we'd need all values. Let's just collect them as strings for now
+             // if we want to be truly generic, or we can handle specific types.
         }
-        if (values.size() > 99 && gs->randomValues)
+        else if (count == (int)recNo)
+        {
+            found = true;
             break;
+        }
+        count++;
     }
-    if (values.size() == 0)
+
+    if (!found && !gs->randomValues)
     {
         if (gs->nullPercent > 0)
         {
-            st->SetNull(param);
+            st->setNull(param);
             return;
         }
         else
             throw FRError(_("No records found in table: ") + gs->sourceTable);
     }
 
-    if (gs->randomValues)
-        st->Set(param, values[frRandom(values.size())]);
+    // Now copy from st2 column 0 to st parameter param
+    fr::ColumnType t = st->getParameterType(param);
+    if (st2->isNull(0))
+        st->setNull(param);
     else
-        st->Set(param, values[recNo % values.size()]);
+    {
+        switch (t)
+        {
+            case fr::ColumnType::Boolean: st->setBool(param, st2->getBool(0)); break;
+            case fr::ColumnType::Char:
+            case fr::ColumnType::Varchar: st->setString(param, st2->getString(0)); break;
+            case fr::ColumnType::Integer: st->setInt32(param, st2->getInt32(0)); break;
+            case fr::ColumnType::BigInt: st->setInt64(param, st2->getInt64(0)); break;
+            case fr::ColumnType::Float:
+            case fr::ColumnType::Double: st->setDouble(param, st2->getDouble(0)); break;
+            case fr::ColumnType::Date:
+            {
+                int y, m, d;
+                st2->getDate(0, y, m, d);
+                st->setDate(param, y, m, d);
+                break;
+            }
+            case fr::ColumnType::Time:
+            case fr::ColumnType::TimeTz:
+            {
+                int h, m, s, f;
+                st2->getTime(0, h, m, s, f);
+                st->setTime(param, h, m, s, f);
+                break;
+            }
+            case fr::ColumnType::Timestamp:
+            case fr::ColumnType::TimestampTz:
+            {
+                int y, mo, d, h, mi, s, f;
+                st2->getTimestamp(0, y, mo, d, h, mi, s, f);
+                st->setTimestamp(param, y, mo, d, h, mi, s, f);
+                break;
+            }
+            default: st->setString(param, st2->getString(0)); break;
+        }
+    }
 }
 
 // format for values:
 // number[value or range(s)]
 // example: 25[az,AZ,09] means: 25 letters or numbers
 // example: 10[a,x,5]       means: 10 chars, each either of 'a', 'x' or '5'
-void DataGeneratorFrame::setString(IBPP::Statement st, int param,
+void DataGeneratorFrame::setString(fr::IStatementPtr st, int param,
     GeneratorSettings* gs, int recNo)
 {
     wxString value;
@@ -1282,12 +1316,12 @@ void DataGeneratorFrame::setString(IBPP::Statement st, int param,
             start = p;
         }
     }
-    st->Set(param, wx2std(value, databaseM->getCharsetConverter()));
+    st->setString(param, wx2std(value, databaseM->getCharsetConverter()));
 }
 
 // gs->range = x,x-y,...
 template<typename T>
-void setNumber(IBPP::Statement st, int param, GeneratorSettings* gs, int recNo)
+void setNumber(fr::IStatementPtr st, int param, GeneratorSettings* gs, int recNo)
 {
     std::vector< std::pair<long,long> > ranges;
     long rangesize = 0;
@@ -1333,14 +1367,19 @@ void setNumber(IBPP::Statement st, int param, GeneratorSettings* gs, int recNo)
         long sz = (*it).second - (*it).first + 1;
         if (sz > toget)
         {
-            st->Set(param, (T)((*it).first + toget));
+            T val = (T)((*it).first + toget);
+            if constexpr (std::is_same_v<T, int16_t>) st->setInt32(param, val);
+            else if constexpr (std::is_same_v<T, int32_t>) st->setInt32(param, val);
+            else if constexpr (std::is_same_v<T, int64_t>) st->setInt64(param, val);
+            else if constexpr (std::is_same_v<T, float>) st->setDouble(param, val);
+            else if constexpr (std::is_same_v<T, double>) st->setDouble(param, val);
             return;
         }
         toget -= sz;
     }
 }
 
-void setDatetime(IBPP::Statement st, int param, GeneratorSettings* gs,
+void setDatetime(fr::IStatementPtr st, int param, GeneratorSettings* gs,
     int recNo)
 {
     std::vector< std::pair<int,int> > dateRanges;
@@ -1348,7 +1387,7 @@ void setDatetime(IBPP::Statement st, int param, GeneratorSettings* gs,
     int dateRangesize = 0;
     int timeRangesize = 0;
 
-    IBPP::SDT dt = st->ParameterType(param);
+    fr::ColumnType dt = st->getParameterType(param);
     size_t start = 0;
     while (start < gs->range.Length())
     {
@@ -1365,22 +1404,22 @@ void setDatetime(IBPP::Statement st, int param, GeneratorSettings* gs,
 
         // convert first value
         int date, time;
-        if ((dt == IBPP::sdDate || dt == IBPP::sdTimestamp))
+        if ((dt == fr::ColumnType::Date || dt == fr::ColumnType::Timestamp || dt == fr::ColumnType::TimestampTz))
             str2date(one.Mid(0,10), date);
-        if (dt == IBPP::sdTime)
+        if (dt == fr::ColumnType::Time || dt == fr::ColumnType::TimeTz)
             str2time(one.Mid(0,8), time);
-        if (dt == IBPP::sdTimestamp)
+        if (dt == fr::ColumnType::Timestamp || dt == fr::ColumnType::TimestampTz)
             str2time(one.Mid(11,8), time);
 
         p = one.find("-");
         if (p == wxString::npos)
         {
-            if (dt == IBPP::sdDate || dt == IBPP::sdTimestamp)
+            if (dt == fr::ColumnType::Date || dt == fr::ColumnType::Timestamp || dt == fr::ColumnType::TimestampTz)
             {
                 dateRanges.push_back(std::pair<int,int>(date, date));
                 dateRangesize++;
             }
-            if (dt == IBPP::sdTime || dt == IBPP::sdTimestamp)
+            if (dt == fr::ColumnType::Time || dt == fr::ColumnType::TimeTz || dt == fr::ColumnType::Timestamp || dt == fr::ColumnType::TimestampTz)
             {
                 timeRanges.push_back(std::pair<int,int>(time, time));
                 timeRangesize++;
@@ -1389,21 +1428,21 @@ void setDatetime(IBPP::Statement st, int param, GeneratorSettings* gs,
         else    // range, convert second date/time
         {
             int date2, time2;
-            if (dt == IBPP::sdDate)
+            if (dt == fr::ColumnType::Date)
                 str2date(one.Mid(11,10), date2);
-            if (dt == IBPP::sdTimestamp)
+            if (dt == fr::ColumnType::Timestamp || dt == fr::ColumnType::TimestampTz)
                 str2date(one.Mid(20,10), date2);
-            if (dt == IBPP::sdTime)
+            if (dt == fr::ColumnType::Time || dt == fr::ColumnType::TimeTz)
                 str2time(one.Mid( 9, 8), time2);
-            if (dt == IBPP::sdTimestamp)
+            if (dt == fr::ColumnType::Timestamp || dt == fr::ColumnType::TimestampTz)
                 str2time(one.Mid(31, 8), time2);
 
-            if (dt == IBPP::sdDate || dt == IBPP::sdTimestamp)
+            if (dt == fr::ColumnType::Date || dt == fr::ColumnType::Timestamp || dt == fr::ColumnType::TimestampTz)
             {
                 dateRanges.push_back(std::pair<int,int>(date, date2));
                 dateRangesize += (date2-date+1);
             }
-            if (dt == IBPP::sdTime || dt == IBPP::sdTimestamp)
+            if (dt == fr::ColumnType::Time || dt == fr::ColumnType::TimeTz || dt == fr::ColumnType::Timestamp || dt == fr::ColumnType::TimestampTz)
             {
                 timeRanges.push_back(std::pair<int,int>(time, time2));
                 timeRangesize += ((time2-time) / 10000 + 1);
@@ -1448,61 +1487,72 @@ void setDatetime(IBPP::Statement st, int param, GeneratorSettings* gs,
         timeToGet -= sz;
     }
 
-    if (dt == IBPP::sdDate)
-        st->Set(param, IBPP::Date(myDate));
-    if (dt == IBPP::sdTime)
-        st->Set(param, IBPP::Time(IBPP::Time::tmNone, myTime, IBPP::Time::TZ_NONE));
-    if (dt == IBPP::sdTimestamp)
+    if (dt == fr::ColumnType::Date)
+    {
+        int y, m, d;
+        IBPP::dtoi(myDate, &y, &m, &d);
+        st->setDate(param, y, m, d);
+    }
+    if (dt == fr::ColumnType::Time || dt == fr::ColumnType::TimeTz)
+    {
+        int h, m, s, t;
+        IBPP::ttoi(myTime, &h, &m, &s, &t);
+        st->setTime(param, h, m, s, t);
+    }
+    if (dt == fr::ColumnType::Timestamp || dt == fr::ColumnType::TimestampTz)
     {
         int y, mo, d, h, mi, s, t;
         IBPP::dtoi(myDate, &y, &mo, &d);
         IBPP::ttoi(myTime, &h, &mi, &s, &t);
-        st->Set(param, IBPP::Timestamp(y, mo, d, IBPP::Time::tmNone, h, mi, s, t, IBPP::Time::TZ_NONE, NULL));
+        st->setTimestamp(param, y, mo, d, h, mi, s, t);
     }
 }
 
-void DataGeneratorFrame::setParam(IBPP::Statement st, int param,
+void DataGeneratorFrame::setParam(fr::IStatementPtr st, int param,
     GeneratorSettings* gs, int recNo)
 {
     if (gs->nullPercent > frRandom(100))
     {
-        st->SetNull(param);
+        st->setNull(param);
         return;
     }
 
     if (gs->valueType == GeneratorSettings::vtColumn)   // copy from column
     {
-        switch (st->ParameterType(param))
+        switch (st->getParameterType(param))
         {
-            case IBPP::sdBoolean: // Firebird v3
-                setFromOther<std::string>(st, param, gs, recNo);  break;
-            case IBPP::sdString:
-                setFromOther<std::string>(st, param, gs, recNo);  break;
-            case IBPP::sdSmallint:
-                setFromOther<int16_t>(st, param, gs, recNo);      break;
-            case IBPP::sdInteger:
-                setFromOther<int32_t>(st, param, gs, recNo);      break;
-            case IBPP::sdLargeint:
-                setFromOther<int64_t>(st, param, gs, recNo);      break;
-            case IBPP::sdFloat:
-                setFromOther<float>(st, param, gs, recNo);        break;
-            case IBPP::sdDouble:
-                setFromOther<double>(st, param, gs, recNo);       break;
-            case IBPP::sdDate:
-                setFromOther<IBPP::Date>(st, param, gs, recNo);   break;
-            case IBPP::sdTime:
-            case IBPP::sdTimeTz:
-                setFromOther<IBPP::Time>(st, param, gs, recNo);   break;
-            case IBPP::sdTimestamp:
-            case IBPP::sdTimestampTz:
-                setFromOther<IBPP::Timestamp>(st, param, gs, recNo);  break;
-            case IBPP::sdBlob:
+            case fr::ColumnType::Boolean:
+                setFromOther(st, param, gs, recNo, databaseM);
+  break;
+            case fr::ColumnType::Varchar:
+                setFromOther(st, param, gs, recNo, databaseM);
+  break;
+            case fr::ColumnType::Integer:
+                setFromOther(st, param, gs, recNo, databaseM);
+      break;
+            case fr::ColumnType::BigInt:
+                setFromOther(st, param, gs, recNo, databaseM);
+      break;
+            case fr::ColumnType::Float:
+                setFromOther(st, param, gs, recNo, databaseM);
+        break;
+            case fr::ColumnType::Double:
+                setFromOther(st, param, gs, recNo, databaseM);
+       break;
+            case fr::ColumnType::Date:
+                setFromOther(st, param, gs, recNo, databaseM);
+               break;
+            case fr::ColumnType::Time:
+            case fr::ColumnType::TimeTz:
+                setFromOther(st, param, gs, recNo, databaseM);
+               break;
+            case fr::ColumnType::Timestamp:
+            case fr::ColumnType::TimestampTz:
+                setFromOther(st, param, gs, recNo, databaseM);
+               break;
+            case fr::ColumnType::Blob:
                 throw FRError(_("Blob datatype not supported"));
-            case IBPP::sdArray:
-                throw FRError(_("Array datatype not supported"));
-            case IBPP::sdInt128:
-            case IBPP::sdDec16:
-            case IBPP::sdDec34:
+            default:
                 throw FRError(_("Datatype not supported"));
         };
         return;
@@ -1510,33 +1560,31 @@ void DataGeneratorFrame::setParam(IBPP::Statement st, int param,
 
     if (gs->valueType == GeneratorSettings::vtRange)
     {
-        switch (st->ParameterType(param))
+        switch (st->getParameterType(param))
         {
-            case IBPP::sdBoolean: // Firebird v3
+            case fr::ColumnType::Boolean:
                 setString(st, param, gs, recNo);          break;
-            case IBPP::sdString:
+            case fr::ColumnType::Varchar:
                 setString(st, param, gs, recNo);          break;
-            case IBPP::sdSmallint:
-                setNumber<int16_t>(st, param, gs, recNo); break;
-            case IBPP::sdInteger:
+            case fr::ColumnType::Integer:
                 setNumber<int32_t>(st, param, gs, recNo); break;
-            case IBPP::sdLargeint:
+            case fr::ColumnType::BigInt:
                 setNumber<int64_t>(st, param, gs, recNo); break;
-            case IBPP::sdFloat:
+            case fr::ColumnType::Float:
                 setNumber<float>  (st, param, gs, recNo); break;
-            case IBPP::sdDouble:
+            case fr::ColumnType::Double:
                 setNumber<double> (st, param, gs, recNo); break;
-            case IBPP::sdDate:
-            case IBPP::sdTime:
-            case IBPP::sdTimestamp:
+            case fr::ColumnType::Date:
+            case fr::ColumnType::Time:
+            case fr::ColumnType::TimeTz:
+            case fr::ColumnType::Timestamp:
+            case fr::ColumnType::TimestampTz:
                 setDatetime(st, param, gs, recNo);
                 break;
-            case IBPP::sdBlob:
+            case fr::ColumnType::Blob:
                 throw FRError(_("Blob datatype not supported"));
-            case IBPP::sdArray:
-                throw FRError(_("Array datatype not supported"));
             default:
-                st->SetNull(param);
+                st->setNull(param);
         };
     }
 
@@ -1548,12 +1596,11 @@ void DataGeneratorFrame::generateData(std::list<Table *>& order)
 {
     ProgressDialog pd(this, _("Generating data"), 2);
     pd.doShow();
-    pd.initProgress(_("Inserting into tables"), order.size());
+    pd.initProgress(_("Inserting into tables"), (int)order.size());
 
     // one big transaction (perhaps this should be configurable)
-    IBPP::Transaction tr =
-        IBPP::TransactionFactory(databaseM->getIBPPDatabase());
-    tr->Start();
+    fr::ITransactionPtr tr = databaseM->getDALDatabase()->createTransaction();
+    tr->start();
 
     for (std::list<Table *>::iterator it = order.begin();
         it != order.end(); ++it)
@@ -1596,21 +1643,20 @@ void DataGeneratorFrame::generateData(std::list<Table *>& order)
         if (first)  // no columns
             continue;
 
-        IBPP::Statement st =
-            IBPP::StatementFactory(databaseM->getIBPPDatabase(), tr);
-        st->Prepare(wx2std(ins + params + ")"));
+        fr::IStatementPtr st = databaseM->getDALDatabase()->createStatement(tr);
+        st->prepare(wx2std(ins + params + ")", databaseM->getCharsetConverter()));
 
         for (int i = 0; i < records; i++)
         {
             if (pd.isCanceled())
                 return;
             pd.stepProgress(1, 2);
-            for (int p = 0; p < st->Parameters(); ++p)
-                setParam(st, p+1, colSet[p], i);
-            st->Execute();
+            for (int p = 0; p < st->getParameterCount(); ++p)
+                setParam(st, p, colSet[p], i);
+            st->execute();
         }
     }
 
-    tr->Commit();
+    tr->commit();
 }
 

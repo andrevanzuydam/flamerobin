@@ -814,8 +814,8 @@ public:
 
     void Shutdown(const std::string& dbfile, IBPP::DSM flags,  int sectimeout);
     void Restart(const std::string& dbfile, IBPP::DSM flags);
-    void Sweep(const std::string& dbfile);
-    void Repair(const std::string& dbfile, IBPP::RPF flags);
+    void Sweep(const std::string& dbfile, const int parallelWorkers = 0);
+    void Repair(const std::string& dbfile, IBPP::RPF flags, const int parallelWorkers = 0);
 
     void StartBackup(
         const std::string& dbfile, const std::string& bkfile, const std::string& outfile = "",
@@ -902,12 +902,14 @@ public:
         bool* SyncWrites, bool* Reserve, bool* ReadOnly);
     void TransactionInfo(int* Oldest, int* OldestActive,
         int* OldestSnapshot, int* Next);
+    void CryptState(int* state);
     void Statistics(int* Fetches, int* Marks, int* Reads, int* Writes, int* CurrentMemory);
     void Counts(int* Insert, int* Update, int* Delete,
         int* ReadIdx, int* ReadSeq);
     void DetailedCounts(IBPP::DatabaseCounts& counts);
     void Users(std::vector<std::string>& users);
-    int Dialect() { return mDialect; }
+    void Version(std::string& version);
+    int Dialect()                       { return mDialect; }
 
     void Create(int dialect);
     void Connect();

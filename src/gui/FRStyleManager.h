@@ -36,6 +36,15 @@ private:
     const wxString _SECONDARY = "StyleThemeSecondary";
     const wxString _STYLEACTIVE = "StyleActive";
     const wxString _default = "stylers";
+public:
+    static const wxString _DARKMODEDEFAULT;
+    static const wxString _DARKMODE_KEY;
+
+    enum Theme {
+        ThemeSystem = 0,
+        ThemeLight = 1,
+        ThemeDark = 2
+    };
 
     wxFileName fileNamePrimaryM;
     wxFileName fileNameSecondaryM;

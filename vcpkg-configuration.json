@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg-configuration.schema.json",
+  "default-registry": {
+    "kind": "git",
+    "repository": "https://github.com/microsoft/vcpkg",
+    "baseline": "12dcccadfe573d0eaa6c67a968413ded7805d256"
+  },
+  "registries": [],
+  "overlay-ports": [
+    "ports"
+  ],
+  "overlay-triplets": [
+    "src/fb-cpp/cmake/triplets"
+  ]
+}

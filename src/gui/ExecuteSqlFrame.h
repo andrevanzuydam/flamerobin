@@ -36,6 +36,7 @@
 
 #include "core/Observer.h"
 #include "core/StringUtils.h"
+#include "engine/db/ITransaction.h"
 #include "controls/DataGridTable.h"
 #include "gui/BaseFrame.h"
 #include "gui/EditBlobDialog.h"
@@ -59,6 +60,7 @@ public:
     void highlightText(int start, int end);
     void clearHighlights();
     void setChars(bool firebirdIdentifierOnly);
+    void setKeywords(int odsMajor, int odsMinor);
     void setFont();
     void setupStyles();
 
@@ -105,7 +107,7 @@ private:
     wxFileName filenameM;
     wxDateTime filenameModificationTimeM;
 
-    void compareCounts(IBPP::DatabaseCounts& one, IBPP::DatabaseCounts& two);
+    void compareCounts(std::map<int, fr::CountInfo>& one, std::map<int, fr::CountInfo>& two);
 
     void showProperties(wxString objectName);
 
@@ -130,13 +132,14 @@ private:
     bool inParseStatementsM = false; // reentrancy guard for parseStatements yields
     bool autoCommitM;
     bool inTransactionM;
-    IBPP::Transaction transactionM;
-    IBPP::Statement statementM;
+    fr::ITransactionPtr transactionM;
+    fr::IStatementPtr statementM;
     bool isTransactionStarted();
-    IBPP::TIL transactionIsolationLevelM;
-    IBPP::TLR transactionLockResolutionM;
-    IBPP::TAM transactionAccessModeM;
+    fr::TransactionIsolationLevel transactionIsolationLevelM;
+    fr::TransactionLockResolution transactionLockResolutionM;
+    fr::TransactionAccessMode transactionAccessModeM;
     bool showStatisticsM;
+    bool showProfilerM;
     void inTransaction(bool started);       // changes controls (enable/disable)
     bool commitTransaction();
     bool rollbackTransaction();
@@ -229,6 +232,8 @@ private:
     void OnMenuShowPlan(wxCommandEvent& event);
     void OnMenuShowStatistics(wxCommandEvent& event);
     void OnMenuUpdateShowStatistics(wxUpdateUIEvent& event);
+    void OnMenuShowProfiler(wxCommandEvent& event);
+    void OnMenuUpdateShowProfiler(wxUpdateUIEvent& event);
     void OnMenuExecuteSelection(wxCommandEvent& event);
     void OnMenuExecuteFromCursor(wxCommandEvent& event);
     void OnMenuCommit(wxCommandEvent& event);
@@ -292,7 +297,10 @@ protected:
     wxNotebook* notebook_1;
     wxPanel* notebook_pane_1;
     wxPanel* notebook_pane_2;
+    wxPanel* notebook_pane_3;
     DataGrid* grid_data;
+    DataGrid* grid_profiler_psql;
+    DataGrid* grid_profiler_rs;
     wxStyledTextCtrl* styled_text_ctrl_stats;
 
     wxStatusBar* statusbar_1;

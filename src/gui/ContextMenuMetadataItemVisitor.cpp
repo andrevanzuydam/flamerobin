@@ -45,6 +45,7 @@
 #include "metadata/MetadataTemplateManager.h"
 #include "metadata/package.h"
 #include "metadata/procedure.h"
+#include "metadata/publication.h"
 #include "metadata/role.h"
 #include "metadata/root.h"
 #include "metadata/server.h"
@@ -99,7 +100,10 @@ void MainObjectMenuMetadataItemVisitor::visitDatabase(Database& database)
     toolsMenu->Append(Cmds::Menu_ShutdownDatabase, _("Shutdown database"));
     toolsMenu->Append(Cmds::Menu_StartupDatabase, _("Startup database"));
     addSeparator();
+    toolsMenu->Append(Cmds::Menu_Maintenance, _("&Maintenance..."));
+    addSeparator();
     toolsMenu->Append(Cmds::Menu_MonitorEvents, _("&Monitor events"));
+    toolsMenu->Append(Cmds::Menu_MonitorTransactions, _("Monitor &transactions"));
     toolsMenu->Append(Cmds::Menu_GenerateData, _("&Test data generator"));
 
     menuM->Append(Cmds::Menu_DropDatabase, _("Dr&op database"));
@@ -302,6 +306,32 @@ void MainObjectMenuMetadataItemVisitor::visitProcedures(Procedures& procedures)
     addCreateItem();
     addSeparator();
     addGenerateCodeMenu(procedures);
+    addSeparator();
+    addRefreshItem();
+}
+
+void MainObjectMenuMetadataItemVisitor::visitPublication(Publication& publication)
+{
+    addDropItem(publication);
+    addSeparator();
+    addGenerateCodeMenu(publication);
+    addSeparator();
+    addRefreshItem();
+    addPropertiesItem();
+}
+
+void MainObjectMenuMetadataItemVisitor::visitPublications(Publications& publications)
+{
+    addSeparator();
+    addGenerateCodeMenu(publications);
+    addSeparator();
+    addRefreshItem();
+}
+
+void MainObjectMenuMetadataItemVisitor::visitReplication(Replication& replication)
+{
+    addSeparator();
+    addGenerateCodeMenu(replication);
     addSeparator();
     addRefreshItem();
 }

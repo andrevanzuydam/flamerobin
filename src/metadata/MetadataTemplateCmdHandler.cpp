@@ -43,6 +43,7 @@
 #include "metadata/parameter.h"
 #include "metadata/privilege.h"
 #include "metadata/procedure.h"
+#include "metadata/publication.h"
 #include "metadata/relation.h"
 #include "metadata/role.h"
 #include "metadata/server.h"
@@ -50,6 +51,8 @@
 #include "metadata/User.h"
 #include "metadata/view.h"
 #include "metadata/package.h"
+#include "metadata/TransactionInfoObject.h"
+#include "firebird/constants.h"
 
 
 class MetadataTemplateCmdHandler: public TemplateCmdHandler
@@ -465,9 +468,43 @@ void MetadataTemplateCmdHandler::handleTemplateCmd(TemplateProcessor *tp,
                     cmdParams.from(2), (*it).get());
             }
         }
+        // {%foreach:active_transaction:<separator>:<text>%}
+        else if (cmdParams[0] == "active_transaction")
+        {
+            Database* db = dynamic_cast<Database*>(object);
+            if (!db)
+                return;
+
+            const std::vector<fr::TransactionInfo>& transactions = db->getInfo().getActiveTransactions();
+            bool firstItem = true;
+            for (const auto& info : transactions)
+            {
+                TransactionInfoObject tio(info);
+                Local::foreachIteration(firstItem, tp, processedText, sep,
+                    cmdParams.from(2), &tio);
+            }
+        }
         // add more collections here.
         else
             return;
+    }
+
+    // {%transactioninfo:<property>%}
+    else if (cmdName == "transactioninfo" && !cmdParams.IsEmpty())
+    {
+        TransactionInfoObject* tio = dynamic_cast<TransactionInfoObject*>(object);
+        if (!tio)
+            return;
+
+        const fr::TransactionInfo& info = tio->getInfo();
+        if (cmdParams[0] == "id")
+            processedText += wxString::Format("%d", info.id);
+        else if (cmdParams[0] == "isolation_level")
+            processedText += isolationLevelToString(info.isolationLevel);
+        else if (cmdParams[0] == "read_only")
+            processedText += getBooleanAsString(info.readOnly);
+        else if (cmdParams[0] == "wait")
+            processedText += getBooleanAsString(info.wait);
     }
 
     // {%owner_name%}
@@ -840,6 +877,10 @@ void MetadataTemplateCmdHandler::handleTemplateCmd(TemplateProcessor *tp,
 
         if (cmdParams[0] == "connection_string")
             processedText += db->getConnectionString();
+        else if (cmdParams[0] == "session_timezone")
+            processedText += db->getDefaultTimezone().name;
+        else if (cmdParams[0] == "database_timezone")
+            processedText += db->getDatabaseTimezone().name;
         else if (cmdParams[0] == "ods_version")
         {
             processedText += wxString() << db->getInfo().getODS();
@@ -888,6 +929,10 @@ void MetadataTemplateCmdHandler::handleTemplateCmd(TemplateProcessor *tp,
             processedText += wxString() << db->getInfo().getOldestSnapshot();
         else if (cmdParams[0] == "next_transaction")
             processedText += wxString() << db->getInfo().getNextTransaction();
+        else if (cmdParams[0] == "crypt_state")
+        {
+            processedText += cryptStateToString(db->getInfo().getCryptState());
+        }
         else if (cmdParams[0] == "connected_users")
         {
             wxArrayString users;
@@ -898,6 +943,29 @@ void MetadataTemplateCmdHandler::handleTemplateCmd(TemplateProcessor *tp,
             processedText += wxString() << db->getLinger();
         else if (cmdParams[0] == "sql_security")
             processedText += wxString() << db->getSqlSecurity();
+    }
+
+    // {%publicationinfo:<property>%}
+    // If the current object is a publication, expands to the publication's
+    // requested property.
+    else if (cmdName == "publicationinfo" && !cmdParams.IsEmpty())
+    {
+        Publication* p = dynamic_cast<Publication*>(object);
+        if (!p)
+            return;
+
+        if (cmdParams[0] == "tables")
+        {
+            wxArrayString tables = p->getTables();
+            for (size_t i = 0; i < tables.size(); ++i)
+            {
+                if (i > 0)
+                    processedText += ", ";
+                processedText += tables[i];
+            }
+        }
+        else if (cmdParams[0] == "all_tables")
+            processedText += getBooleanAsString(p->getAllTables());
     }
 
     // {%privilegeinfo:<property>%}

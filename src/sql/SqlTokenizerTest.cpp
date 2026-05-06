@@ -21,6 +21,8 @@
   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
+#include <iostream>
+
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
@@ -29,8 +31,6 @@
 #ifndef WX_PRECOMP
     #include "wx/wx.h"
 #endif
-
-#include <iostream>
 
 #include "sql/SqlTokenizer.h"
 
@@ -95,6 +95,18 @@ int main()
         SqlTokenizer t("select");
         ok = checkToken(t.getCurrentToken(), kwSELECT,
             "select lowercase: kwSELECT") && ok;
+    }
+
+    // Test for Firebird 5.0 keywords
+    {
+        SqlTokenizer t("TARGET SOURCE MATCHED");
+        ok = checkToken(t.getCurrentToken(), kwTARGET, "TARGET: kwTARGET") && ok;
+        t.nextToken();
+        t.nextToken(); // skip whitespace
+        ok = checkToken(t.getCurrentToken(), kwSOURCE, "SOURCE: kwSOURCE") && ok;
+        t.nextToken();
+        t.nextToken(); // skip whitespace
+        ok = checkToken(t.getCurrentToken(), kwMATCHED, "MATCHED: kwMATCHED") && ok;
     }
 
     // Test 4: identifier that is not a keyword
@@ -322,6 +334,123 @@ int main()
     {
         SqlTokenizer t("SET");
         ok = checkToken(t.getCurrentToken(), kwSET, "SET: kwSET") && ok;
+    }
+
+    // Test 28: Modern Firebird keywords (FB4+)
+    {
+        SqlTokenizer t("DECFLOAT");
+        ok = checkToken(t.getCurrentToken(), kwDECFLOAT, "DECFLOAT: kwDECFLOAT") && ok;
+    }
+    {
+        SqlTokenizer t("INT128");
+        ok = checkToken(t.getCurrentToken(), kwINT128, "INT128: kwINT128") && ok;
+    }
+    {
+        SqlTokenizer t("ZONE");
+        ok = checkToken(t.getCurrentToken(), kwZONE, "ZONE: kwZONE") && ok;
+    }
+
+    {
+        SqlTokenizer t("SCROLL");
+        ok = checkToken(t.getCurrentToken(), kwSCROLL, "SCROLL: kwSCROLL") && ok;
+    }
+
+    // Test 29: Scrollable cursor syntax (FB 4.0)
+    {
+        SqlTokenizer t("DECLARE SCROLL CURSOR C1 FOR SELECT * FROM T");
+        ok = checkToken(t.getCurrentToken(), kwDECLARE, "DECLARE: kwDECLARE") && ok;
+        t.jumpToken(false);
+        ok = checkToken(t.getCurrentToken(), kwSCROLL, "SCROLL: kwSCROLL") && ok;
+        t.jumpToken(false);
+        ok = checkToken(t.getCurrentToken(), kwCURSOR, "CURSOR: kwCURSOR") && ok;
+    }
+
+    // Test 29.5: SKIP LOCKED syntax and full statements
+    {
+        SqlTokenizer t1("SKIP LOCKED");
+        ok = checkToken(t1.getCurrentToken(), kwSKIP, "SKIP: kwSKIP") && ok;
+        t1.jumpToken(false);
+        ok = checkToken(t1.getCurrentToken(), kwLOCKED, "LOCKED: kwLOCKED") && ok;
+
+        SqlTokenizer t1_lower("skip locked");
+        ok = checkToken(t1_lower.getCurrentToken(), kwSKIP, "SKIP (lower): kwSKIP") && ok;
+        t1_lower.jumpToken(false);
+        ok = checkToken(t1_lower.getCurrentToken(), kwLOCKED, "LOCKED (lower): kwLOCKED") && ok;
+
+        SqlTokenizer t1_mixed("sKiP lOcKeD");
+        ok = checkToken(t1_mixed.getCurrentToken(), kwSKIP, "SKIP (mixed): kwSKIP") && ok;
+        t1_mixed.jumpToken(false);
+        ok = checkToken(t1_mixed.getCurrentToken(), kwLOCKED, "LOCKED (mixed): kwLOCKED") && ok;
+
+        SqlTokenizer t2("SELECT * FROM table WITH LOCK SKIP LOCKED");
+        ok = checkToken(t2.getCurrentToken(), kwSELECT, "SELECT: kwSELECT") && ok;
+        t2.jumpToken(false); // *
+        t2.jumpToken(false);
+        ok = checkToken(t2.getCurrentToken(), kwFROM, "FROM: kwFROM") && ok;
+        t2.jumpToken(false); // table
+        t2.jumpToken(false);
+        ok = checkToken(t2.getCurrentToken(), kwWITH, "WITH: kwWITH") && ok;
+        t2.jumpToken(false);
+        ok = checkToken(t2.getCurrentToken(), kwLOCK, "LOCK: kwLOCK") && ok;
+        t2.jumpToken(false);
+        ok = checkToken(t2.getCurrentToken(), kwSKIP, "SKIP: kwSKIP") && ok;
+        t2.jumpToken(false);
+        ok = checkToken(t2.getCurrentToken(), kwLOCKED, "LOCKED: kwLOCKED") && ok;
+
+        SqlTokenizer t3("UPDATE table SET col = 1 SKIP LOCKED");
+        ok = checkToken(t3.getCurrentToken(), kwUPDATE, "UPDATE: kwUPDATE") && ok;
+        t3.jumpToken(false); // table
+        t3.jumpToken(false);
+        ok = checkToken(t3.getCurrentToken(), kwSET, "SET: kwSET") && ok;
+        t3.jumpToken(false); // col
+        t3.jumpToken(false); // =
+        t3.jumpToken(false); // 1
+        t3.jumpToken(false);
+        ok = checkToken(t3.getCurrentToken(), kwSKIP, "SKIP: kwSKIP") && ok;
+        t3.jumpToken(false);
+        ok = checkToken(t3.getCurrentToken(), kwLOCKED, "LOCKED: kwLOCKED") && ok;
+
+        SqlTokenizer t4("DELETE FROM table SKIP LOCKED");
+        ok = checkToken(t4.getCurrentToken(), kwDELETE, "DELETE: kwDELETE") && ok;
+        t4.jumpToken(false);
+        ok = checkToken(t4.getCurrentToken(), kwFROM, "FROM: kwFROM") && ok;
+        t4.jumpToken(false); // table
+        t4.jumpToken(false);
+        ok = checkToken(t4.getCurrentToken(), kwSKIP, "SKIP: kwSKIP") && ok;
+        t4.jumpToken(false);
+        ok = checkToken(t4.getCurrentToken(), kwLOCKED, "LOCKED: kwLOCKED") && ok;
+    }
+
+    // Test 30: Version-based keyword strings
+    {
+        wxString fb25 = SqlTokenizer::getKeywordsString(SqlTokenizer::kwUpperCase, 11, 1); // ODS 11.1 (FB 2.5)
+        wxString fb40 = SqlTokenizer::getKeywordsString(SqlTokenizer::kwUpperCase, 13, 0); // ODS 13.0 (FB 4.0)
+        
+        ok = check(fb25.Contains("SELECT"), "FB2.5 has SELECT") && ok;
+        ok = check(!fb25.Contains("DECFLOAT"), "FB2.5 does not have DECFLOAT") && ok;
+        ok = check(!fb25.Contains("PUBLICATION"), "FB2.5 does not have PUBLICATION") && ok;
+        
+        ok = check(fb40.Contains("SELECT"), "FB4.0 has SELECT") && ok;
+        ok = check(fb40.Contains("DECFLOAT"), "FB4.0 has DECFLOAT") && ok;
+        ok = check(fb40.Contains("PUBLICATION"), "FB4.0 has PUBLICATION") && ok;
+        ok = check(!fb40.Contains("LOCKED"), "FB4.0 does not have LOCKED") && ok;
+
+        wxString fb50 = SqlTokenizer::getKeywordsString(SqlTokenizer::kwUpperCase, 13, 1); // ODS 13.1 (FB 5.0)
+        ok = check(fb50.Contains("SKIP"), "FB5.0 has SKIP") && ok;
+        ok = check(fb50.Contains("LOCKED"), "FB5.0 has LOCKED") && ok;
+    }
+
+    // Test: LATERAL join
+    {
+        wxString sql = "SELECT * FROM RDB$DATABASE JOIN LATERAL (SELECT 1 FROM RDB$DATABASE) ON 1=1";
+        SqlTokenizer tk(sql);
+        ok = check(tk.getCurrentToken() == kwSELECT, "LATERAL test: Start with SELECT") && ok;
+        ok = check(tk.jumpToken(false) && tk.getCurrentToken() == tkUNKNOWN, "LATERAL test: Jump to *") && ok;
+        ok = check(tk.jumpToken(false) && tk.getCurrentToken() == kwFROM, "LATERAL test: Jump to FROM") && ok;
+        ok = check(tk.jumpToken(false) && tk.getCurrentToken() == tkIDENTIFIER, "LATERAL test: Jump to RDB$DATABASE") && ok;
+        ok = check(tk.jumpToken(false) && tk.getCurrentToken() == kwJOIN, "LATERAL test: Jump to JOIN") && ok;
+        ok = check(tk.jumpToken(false) && tk.getCurrentToken() == kwLATERAL, "LATERAL test: Jump to LATERAL") && ok;
+        ok = check(tk.jumpToken(true) && tk.getCurrentToken() == kwON, "LATERAL test: Jump past LATERAL subquery to ON") && ok;
     }
 
     return ok ? 0 : 1;

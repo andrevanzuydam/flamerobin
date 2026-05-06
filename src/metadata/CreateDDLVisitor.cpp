@@ -49,6 +49,7 @@
 #include "metadata/package.h"
 #include "metadata/parameter.h"
 #include "metadata/procedure.h"
+#include "metadata/publication.h"
 #include "metadata/role.h"
 #include "metadata/table.h"
 #include "metadata/view.h"
@@ -444,7 +445,8 @@ void CreateDDLVisitor::visitIndex(Index& i)
         preSqlM += "UNIQUE ";
     if (i.getIndexType() == Index::itDescending)
         preSqlM += "DESCENDING ";
-    preSqlM += "INDEX " + i.getQuotedName() + " ON " + i.getParent()->getQuotedName();
+    Identifier relId(i.getRelationName());
+    preSqlM += "INDEX " + i.getQuotedName() + " ON " + relId.getQuoted();
     std::vector<wxString> quotedSegments;
     std::vector<wxString>* cols = i.getSegments();
     for (std::vector<wxString>::const_iterator it = cols->begin(); it != cols->end(); ++it)
@@ -543,6 +545,28 @@ void CreateDDLVisitor::visitProcedure(Procedure& p)
     temp = p.getAlterSql(false);    // false = only headers
     temp.Replace("ALTER", "CREATE", false);   // just first
     preSqlM << temp << "\n";
+}
+
+void CreateDDLVisitor::visitPublication(Publication& publication)
+{
+    sqlM << "CREATE PUBLICATION " << publication.getQuotedName();
+    if (publication.getAllTables())
+    {
+        sqlM << " FOR ALL TABLES;\n";
+    }
+    else
+    {
+        sqlM << " FOR TABLE (";
+        wxArrayString tables = publication.getTables();
+        for (size_t i = 0; i < tables.size(); ++i)
+        {
+            if (i > 0)
+                sqlM << ", ";
+            sqlM << Identifier(tables[i], publication.getDatabase()->getSqlDialect()).getQuoted();
+        }
+        sqlM << ");\n";
+    }
+    postSqlM << getCommentOn(publication);
 }
 
 void CreateDDLVisitor::visitRole(Role& r)

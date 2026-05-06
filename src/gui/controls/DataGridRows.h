@@ -29,6 +29,7 @@
 #include <list>
 
 #include <ibpp.h>
+#include "engine/db/IStatement.h"
 
 #include "metadata/constraints.h"
 #include "config/Config.h"
@@ -112,6 +113,8 @@ public:
     bool isNullable();
     virtual void setValue(DataGridRowBuffer* buffer, unsigned col,
         const IBPP::Statement& statement, wxMBConv* converter, Database* db) = 0;
+    virtual void setValue(DataGridRowBuffer* buffer, unsigned col,
+        fr::IStatementPtr statement, wxMBConv* converter, Database* db) = 0;
 };
 
 struct DataGridFieldInfo
@@ -127,8 +130,9 @@ struct DataGridFieldInfo
 };
 struct DataGridRowsBlob
 {
-    IBPP::Blob blob;
+    fr::IBlobPtr blob;
     IBPP::Statement st;
+    fr::IStatementPtr stDAL;
     unsigned row;
     unsigned col;
 };
@@ -139,6 +143,7 @@ private:
     Database* databaseM;
     const bool readOnlyM;
     IBPP::Statement statementM;
+    fr::IStatementPtr statementDALM;
     std::vector<ResultsetColumnDef*> columnDefsM;
     std::vector<DataGridRowBuffer*> buffersM;
     std::map<wxString, UniqueConstraint *> statementTablesM;
@@ -148,18 +153,23 @@ private:
 
     void getColumnInfo(Database* db, unsigned col, bool& readOnly,
         bool& nullable);
+    fr::IStatementPtr addWhereDAL(UniqueConstraint* uq, wxString& stm,
+        const wxString& tableName, DataGridRowBuffer* buffer);
     IBPP::Statement addWhere(UniqueConstraint* uq, wxString& stm,
-        const wxString& table, DataGridRowBuffer *buffer);
+        const wxString& tableName, DataGridRowBuffer* buffer);
+
 public:
     DataGridRows(Database* db);
     ~DataGridRows();
 
     void addRow(const IBPP::Statement& statement);
+    void addRow(fr::IStatementPtr statement);
     void clear();
     unsigned getRowCount();
     unsigned getRowFieldCount();
     wxString getRowFieldName(unsigned col);
     bool initialize(const IBPP::Statement& statement);
+    bool initialize(fr::IStatementPtr statement);
 
     bool isColumnNullable(unsigned col);
     bool isColumnNumeric(unsigned col);
@@ -184,7 +194,7 @@ public:
     void addRow(DataGridRowBuffer* buffer);
 
     // BLOB-Stuff
-    IBPP::Blob* getBlob(unsigned row, unsigned col, bool validateBlob);
+    fr::IBlobPtr getBlob(unsigned row, unsigned col, bool validateBlob);
     DataGridRowsBlob setBlobPrepare(unsigned row, unsigned col);
     void setBlob(DataGridRowsBlob &b);
 };

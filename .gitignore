@@ -6,7 +6,7 @@ Release
 ipch
 bcc*
 gcc*
-vc*
+vc[0-9]*
 *.opensdf
 *.sdf
 *.user
@@ -39,3 +39,4 @@ config.log
 config.status
 configure~
 _codeql_detected_source_root
+wxWidgets/

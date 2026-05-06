@@ -307,25 +307,25 @@ bool FieldPropertiesDialog::getIsNewDomainSelected() {
 bool FieldPropertiesDialog::getNotNullConstraintName(const wxString &fieldName,
                                                      wxString &constraintName) {
     if (DatabasePtr db = tableM->getDatabase()) {
-        wxMBConv *converter = db->getCharsetConverter();
+        wxMBConv *conv = db->getCharsetConverter();
         MetadataLoader *loader = db->getMetadataLoader();
         MetadataLoaderTransaction tr(loader);
 
-        IBPP::Statement &st1 = loader->getStatement(
-                "SELECT rc.RDB$CONSTRAINT_NAME FROM RDB$RELATION_CONSTRAINTS rc "
-                "JOIN RDB$CHECK_CONSTRAINTS cc "
-                "ON rc.RDB$CONSTRAINT_NAME = cc.RDB$CONSTRAINT_NAME "
-                "WHERE rc.RDB$CONSTRAINT_TYPE = 'NOT NULL' "
-                "AND rc.RDB$RELATION_NAME = ?"
-                "AND cc.RDB$TRIGGER_NAME = ?");
+        fr::IStatementPtr& st1 = loader->getStatement(
+            "SELECT rc.RDB$CONSTRAINT_NAME FROM RDB$RELATION_CONSTRAINTS rc "
+            "JOIN RDB$CHECK_CONSTRAINTS cc "
+            "ON rc.RDB$CONSTRAINT_NAME = cc.RDB$CONSTRAINT_NAME "
+            "WHERE rc.RDB$CONSTRAINT_TYPE = 'NOT NULL' "
+            "AND rc.RDB$RELATION_NAME = ?"
+            "AND cc.RDB$TRIGGER_NAME = ?");
 
-        st1->Set(1, wx2std(tableM->getName_(), converter));
-        st1->Set(2, wx2std(fieldName, converter));
-        st1->Execute();
-        if (st1->Fetch()) {
-            std::string s; //constraint name
-            st1->Get(1, s); //constraint name
-            constraintName = std2wxIdentifier(s, converter);
+        st1->setString(0, wx2std(tableM->getName_(), conv));
+        st1->setString(1, wx2std(fieldName, conv));
+        st1->execute();
+        if (st1->fetch())
+        {
+            std::string s = st1->getString(0);
+            constraintName = std2wxIdentifier(s, conv);
             return true;
         }
     }
@@ -344,10 +344,8 @@ bool FieldPropertiesDialog::getStatementsToExecute(wxString &statements,
     wxString dtSize = textctrl_size->GetValue();
     wxString dtScale = textctrl_scale->GetValue();
     bool isNullable = !checkbox_notnull->IsChecked();
-    bool isIdentity = tableM->getDatabase()->getInfo().getODSVersionIsHigherOrEqualTo(12.0)
-                      ? checkbox_identity->IsChecked() : false;
-    wxString initialValue = tableM->getDatabase()->getInfo().getODSVersionIsHigherOrEqualTo(12.0)
-                            ? textctrl_initialValue->GetValue() : "";
+    bool isIdentity = tableM->getDatabase()->getInfo().getODSVersionIsHigherOrEqualTo(12.0) ? checkbox_identity->IsChecked() : false;
+    wxString initialValue = tableM->getDatabase()->getInfo().getODSVersionIsHigherOrEqualTo(12.0) ? textctrl_initialValue->GetValue() : wxString("");
 
     int n = choice_datatype->GetSelection();
     if (n >= 0 && n < datatypescnt) {

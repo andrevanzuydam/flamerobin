@@ -58,6 +58,7 @@
 #include "metadata/parameter.h"
 #include "metadata/package.h"
 #include "metadata/procedure.h"
+#include "metadata/publication.h"
 #include "metadata/role.h"
 #include "metadata/root.h"
 #include "metadata/server.h"
@@ -220,6 +221,9 @@ DBHTreeImageList::DBHTreeImageList()
     addImage(ART_PrimaryKey);
     addImage(ART_Procedure);
     addImage(ART_Procedures);
+    addImage(ART_Publication);
+    addImage(ART_Publications);
+    addImage(ART_Replication);
     addImage(ART_Role);
     addImage(ART_Roles);
     addImage(ART_Root);
@@ -348,6 +352,9 @@ public:
     virtual void visitUsers(Users& users);
     virtual void visitView(View& view);
     virtual void visitViews(Views& views);
+    virtual void visitPublication(Publication& publication);
+    virtual void visitPublications(Publications& publications);
+    virtual void visitReplication(Replication& replication);
     virtual void visitIndex(Index& index);
     virtual void visitIndices(Indices& indices);
     virtual void visitSysIndices(SysIndices& sysIndices);
@@ -710,6 +717,21 @@ void DBHTreeItemVisitor::visitProcedures(Procedures& procedures)
     setNodeProperties(&procedures, ART_Procedures);
 }
 
+void DBHTreeItemVisitor::visitPublication(Publication& publication)
+{
+    setNodeProperties(&publication, ART_Publication);
+}
+
+void DBHTreeItemVisitor::visitPublications(Publications& publications)
+{
+    setNodeProperties(&publications, ART_Publications);
+}
+
+void DBHTreeItemVisitor::visitReplication(Replication& replication)
+{
+    setNodeProperties(&replication, ART_Replication);
+}
+
 void DBHTreeItemVisitor::visitRole(Role& role)
 {
     setNodeProperties(&role,
@@ -980,7 +1002,7 @@ private:
     DBHTreeControl* treeM;
     MetadataItem* observedItemM;
 protected:
-    virtual void update();
+    virtual void update() override;
     // Fix for issue #436: clear observedItemM when the subject (MetadataItem)
     // is destroyed (e.g. when a trigger is dropped via SQL).  Without this
     // override the pointer becomes dangling and causes a read-access violation

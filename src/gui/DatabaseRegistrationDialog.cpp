@@ -336,7 +336,7 @@ void DatabaseRegistrationDialog::setControlsProperties()
     int wh = text_ctrl_dbpath->GetMinHeight();
     button_browse->SetSize(wh, wh);
 
-    choice_authentication->SetSelection(0);
+    choice_authentication->SetSelection(DatabaseAuthenticationMode::UseSavedEncryptedPwd);
     combobox_charset->SetStringSelection("NONE");
     if (createM)
     {
@@ -466,8 +466,8 @@ int DatabaseRegistrationDialog::getSuggestedPageSizeByServerVersion() const
 
     try
     {
-        IBPP::Service service;
-        if (!server->getService(service, nullptr, false))
+        fr::IServicePtr service = server->getDALService(nullptr, false);
+        if (!service)
             return 0;
 
         return service->versionIsHigherOrEqualTo(3, 0) ? 8192 : 4096;

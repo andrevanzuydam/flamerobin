@@ -65,14 +65,19 @@ private:
     bool nullFlagM;
 
     Database *databaseM;
-    IBPP::Statement& statementM;
+    IBPP::Statement statementM;
+    fr::IStatementPtr statementDALM;
     wxMBConv* charsetConverterM;
 
     int getStatementColCount();
     bool isValidCellPos(int row, int col);
 public:
     DataGridTable(IBPP::Statement& s, Database* db);
+    DataGridTable(fr::IStatementPtr s, Database* db);
     ~DataGridTable();
+
+    void setStatement(IBPP::Statement s) { statementM = s; }
+    void setStatement(fr::IStatementPtr s) { statementDALM = s; }
 
     bool canFetchMoreRows();
     void fetch();
@@ -117,7 +122,7 @@ public:
     virtual void SetValue(int row, int col, const wxString& value);
     virtual bool DeleteRows(size_t pos, size_t numRows);
 
-    IBPP::Blob* getBlob(unsigned row, unsigned col, bool validateBlob);
+    fr::IBlobPtr getBlob(unsigned row, unsigned col, bool validateBlob);
     DataGridRowsBlob setBlobPrepare(unsigned row, unsigned col);
     void setBlob(DataGridRowsBlob &b);
     void setValueToNull(int row, int col);

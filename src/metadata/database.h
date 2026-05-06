@@ -32,6 +32,7 @@
 
 #include <ibpp.h>
 
+#include "engine/db/IDatabase.h"
 #include "metadata/MetadataClasses.h"
 #include "metadata/metadataitem.h"
 
@@ -94,6 +95,10 @@ private:
     int oldestSnapshotM;
     int nextTransactionM;
 
+    int cryptStateM;
+
+    std::vector<fr::TransactionInfo> activeTransactionsM;
+
     int sweepM;
 
     bool readOnlyM;
@@ -101,8 +106,8 @@ private:
     bool reserveM;
 
     mutable wxLongLong loadTimeMillisM;
-    void load(const IBPP::Database database);
-    void reloadIfNecessary(const IBPP::Database database);
+    void load(fr::IDatabasePtr database);
+    void reloadIfNecessary(fr::IDatabasePtr database);
 public:
     int getODS() const;
     int getODSMinor() const;
@@ -118,6 +123,8 @@ public:
     int getOldestActiveTransaction() const;
     int getOldestSnapshot() const;
     int getNextTransaction() const;
+    int getCryptState() const;
+    const std::vector<fr::TransactionInfo>& getActiveTransactions() const;
 
     int getSweep() const;
 
@@ -165,7 +172,7 @@ class Database: public MetadataItem,
 {
 private:
     ServerWeakPtr serverM;
-    IBPP::Database databaseM;
+    fr::IDatabasePtr databaseDAL_M;
     MetadataLoader* metadataLoaderM;
 
     bool connectedM;
@@ -185,6 +192,7 @@ private:
     DatabaseAuthenticationMode authenticationModeM;
     std::vector<TimezoneInfo*> timezonesM;
     TimezoneInfo defaultTimezoneM;
+    TimezoneInfo databaseTimezoneM;
     std::unordered_map<int, wxString> timezonesCacheM;
     mutable std::mutex timezoneDataMutexM;
 
@@ -213,6 +221,7 @@ private:
     SysRolesPtr sysRolesM;
     SysTablesPtr sysTablesM;
     TablesPtr tablesM;
+    ReplicationPtr replicationM;
     UDFsPtr UDFsM;
     UsersPtr usersM;
     UsrIndicesPtr usrIndicesM;
@@ -281,6 +290,7 @@ public:
     SysRolesPtr getSysRoles();
     SysTablesPtr getSysTables();
     TablesPtr getTables();
+    ReplicationPtr getReplication();
     UDFsPtr getUDFs();
     UsersPtr getUsers();
     UsrIndicesPtr getUsrIndices();
@@ -323,6 +333,7 @@ public:
     bool isDefaultCollation(const wxString& charset, const wxString& collate);
 
     TimezoneInfo getDefaultTimezone();
+    TimezoneInfo getDatabaseTimezone();
     wxString getTimezoneName(int timezone);
 
     //! fill vector with names of all tables, views, etc.
@@ -345,7 +356,8 @@ public:
     DatabaseAuthenticationMode& getAuthenticationMode();
     wxString getRole() const;
     wxString getCryptKeyData() const;
-    IBPP::Database& getIBPPDatabase();
+    IBPP::Database getIBPPDatabase();
+    fr::IDatabasePtr getDALDatabase() const override;
     void setIsVolatile(const bool isVolatile);
     void setPath(const wxString& value);
     void setClientLibrary(const wxString& value);
@@ -377,6 +389,8 @@ public:
 
     const DatabaseInfo& getInfo();
     void loadInfo();
+    int getODSMajor() const;
+    int getODSMinor() const;
 
     void getConnectedUsers(wxArrayString& users) const;
     int getLinger() const; // ODS:12

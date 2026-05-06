@@ -8,8 +8,71 @@
 http://www.flamerobin.org/bugs.php or https://github.com/mariuz/flamerobin/issues</font><br>
 <br><br>
 <!-- *********************** section starts here ************************ -->
-<font size=+2>Changes in FlameRobin (development)</font><br>
+<font size=+2>Changes in FlameRobin 26.5.0</font><br>
 <br><br>
+<font size=+1 color="#AA0000"><B>Modern Engine Transition</B></font><br>
+<br>
+- **fb-cpp as Default Engine**: The modern `fb-cpp` database library is now the default engine for FlameRobin. This transition provides better support for modern Firebird features (3.0 through 6.0) and improved performance.<br>
+- **Scrollable Cursor Support**: Stored procedures and triggers using the new Firebird 4.0 `SCROLL` cursors now have their DDL correctly displayed and keywords highlighted.<br>
+- **Legacy Support**: The IBPP library remains available as a secondary option for users requiring the legacy backend, but it is now marked as "Legacy" in the preferences.<br>
+- **Architecture**: Completed the migration to the Database Abstraction Layer (DAL), ensuring that all core features are now fully compatible with the `fb-cpp` backend.<br>
+<br>
+<font size=+1 color="#AA0000"><B>Firebird 5.0 SQL Editor Enhancements</B></font><br>
+<br>
+- **LATERAL JOIN Support**: The SQL editor tokenizer and parser have been updated to correctly handle the new `LATERAL` join syntax introduced in Firebird 5.0. This ensures accurate statement splitting and avoids false "incomplete statement" warnings during script execution.<br>
+- **SKIP LOCKED Highlighting**: Added syntax highlighting for the `SKIP LOCKED` clause in `SELECT ... WITH LOCK`, `UPDATE`, and `DELETE` statements. This improves readability for high-concurrency SQL queries.<br>
+- **Multiple-Row DML RETURNING**: Added support for displaying multi-row results from `INSERT`, `UPDATE`, and `DELETE` statements that use a `RETURNING` clause. These results are now correctly displayed in the SQL results grid, matching the behavior for standard `SELECT` statements.<br>
+- **SQL/PSQL Profiler**: Integrated the Firebird 5.0 built-in profiler (`RDB$PROFILER` package). Users can now enable profiling for their SQL sessions and view detailed line-by-line PSQL execution statistics and record source performance data in a dedicated "Profiler" tab.<br>
+- **Version-Aware Keywords**: The keyword set is now dynamically adjusted based on the ODS version of the active connection, preventing keyword conflicts when working with older Firebird versions.<br>
+<br>
+<font size=+1 color="#AA0000"><B>Firebird 5.0 Parallel Operations Support</B></font><br>
+<br>
+- **Parallel Workers UI**: Exposed the *parallel worker count* option in the Backup, Restore, and the new Maintenance dialogs. This leverages the `ParallelWorkers` service parameter introduced in Firebird 5.0 to speed up operations on multi-core systems.<br>
+- **New Maintenance Dialog**: Introduced a dedicated "Maintenance..." option in the Database tools menu, allowing manual Sweep and Validation/Repair tasks with support for parallel processing.<br>
+- **Inline ODS Upgrade**: Exposed the new Firebird 5.0 "upgrade ODS" option in the Maintenance dialog. This allows users to upgrade a database to the latest On-Disk Structure version without a full backup and restore cycle.<br>
+- **IBPP Enhancements**: Updated the underlying IBPP library to correctly handle the new Firebird 5.0 SPB parameters for parallel backup and repair tasks.<br>
+<br>
+For more info please read commit history log<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<!-- ***************************** section ends here ******************* -->
+<!-- *********************** section starts here ************************ -->
+<font size=+2>Changes in FlameRobin 26.4.3</font><br>
+<br><br>
+<font size=+1 color="#AA0000"><B>Flatpak & CI/CD Improvements</B></font><br>
+<br>
+- **Flatpak Build Fixes**: Resolved critical build issues in the Flatpak manifest, ensuring correct discovery and linking of Firebird and wxWidgets dependencies within the containerized environment.<br>
+- **CI/CD Optimization**: Significantly refactored GitHub Actions workflows to separate build and test phases. This enables faster, parallel testing across Firebird versions 3.0, 4.0, 5.0, and 6.0 while reducing total resource consumption.<br>
+- **Dependency Discovery**: Improved CMake configuration logic to handle multiple Firebird-related modules more robustly, avoiding target redefinition conflicts.<br>
+- **VCPKG Caching**: Fixed an issue with vcpkg binary cache restoration in CI, leading to faster and more reliable dependency installation.<br>
+<br>
+For more info please read commit history log<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<!-- ***************************** section ends here ******************* -->
+<!-- *********************** section starts here ************************ -->
+<font size=+2>Changes in FlameRobin 26.4.2</font><br>
+<br><br>
+<font size=+1 color="#AA0000"><B>Security & UI Enhancements</B></font><br>
+<br>
+- **Full Dark Mode Support**: FlameRobin now leverages wxWidgets 3.3.0+ capabilities to provide comprehensive dark mode support, including native menus and dialogs on Windows. A new "Application theme" setting in Preferences allows choosing between System Default, Always Light, and Always Dark. (fixes issue #553)<br>
+- **Encrypted Password Storage (Default)**: Database registration now defaults to the "Use saved user name and encrypted password" option. This significantly improves security by ensuring passwords are not stored in plain text in the configuration file. (fixes issue #549)<br>
+- **Style Configurator Improvements**: Fixed a bug where the SQL editor would incorrectly turn orange after saving preferences, especially in Dark Mode. Added robust Dark Mode detection to ensure a consistent visual experience. (fixes issue #550)<br>
+- **About Box Details**: The About box now displays the version of the `fb-cpp` library and the Firebird C++ API, providing better visibility into the underlying database interface components.<br>
+<br>
+<font size=+1 color="#AA0000"><B>Major Refactoring: Migration to fb-cpp (In Progress)</B></font><br>
+<br>
+- **fb-cpp Integration**: Started the transition from the legacy IBPP library to `fb-cpp`, a modern C++20 wrapper for the Firebird database API. This enables support for Firebird 3.0, 4.0, and 5.0 features.<br>
+- **C++20 Upgrade**: The entire codebase has been upgraded to the **C++20** standard to leverage modern language features and improve resource management.<br>
+- **Database Abstraction Layer (DAL)**: Introduced a new architectural layer that decouples FlameRobin's core logic from the specific database backend. For more details, see the <a href="../docs/migration-to-fb-cpp.md">Migration Documentation</a>.<br>
+- **vcpkg Integration**: Transitioned to `vcpkg` for streamlined dependency management and reproducible builds across platforms.<br>
+<br>
 <font size=+1 color="#AA0000"><B>New features</B></font><br>
 <br>
 - Firebird 5 partial index support: generated index DDL now preserves the WHERE predicate so recreated schemas no longer lose partial-index conditions (issue #392)<br>
@@ -21,9 +84,9 @@ so recreated schemas lost WHERE conditions.<br>
 This change adds Firebird 5-aware metadata loading and emits partial-index predicates
 in extracted CREATE INDEX statements.<br>
 <br>
-<b>Metadata loading (Firebird 5 / ODS 13+)</b><br>
+<b>Metadata loading (Firebird 5 / ODS 13.1+)</b><br>
 - Extend index metadata queries to read RDB$INDICES.RDB$CONDITION_SOURCE<br>
-- Gate the column by ODS version (&gt;= 13.0) and fall back to NULL on older servers to keep compatibility<br>
+- Gate the column by ODS version (&gt;= 13.1) and fall back to NULL on older servers to keep compatibility<br>
 - Store condition text in Index (conditionM) with accessor support<br>
 <br>
 <b>DDL generation</b><br>

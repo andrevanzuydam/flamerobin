@@ -71,16 +71,13 @@ class BackupThread : public BackupRestoreThread
 public:
     BackupThread(BackupFrame* frame, wxString server,
         wxString username, wxString password, wxString rolename, wxString charset,
-        wxString dbfilename, wxString bkfilename,
-        IBPP::BRF flags, int interval, int parallel,
-        wxString skipData, wxString includeData,
-        wxString cryptPluginName, wxString keyPlugin, wxString keyEncrypt
+        const fr::BackupConfig& config
     );
 protected:
-    virtual void Execute(IBPP::Service);
+    virtual void Execute(fr::IServicePtr);
     virtual wxString getOperationName() const;
 
-    int factorM;
+    fr::BackupConfig configM;
 
 };
 #endif // BACKUPFRAME_H

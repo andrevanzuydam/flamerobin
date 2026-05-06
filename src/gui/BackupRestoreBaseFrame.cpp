@@ -263,7 +263,7 @@ void BackupRestoreBaseFrame::layoutControls()
         {
             wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
             sizer->Add(new wxStaticText(panel_controls, wxID_ANY,
-                _("Parallel (FB3.0+)")), 0, wxALIGN_CENTER_VERTICAL);
+                _("Parallel workers (FB5.0+)")), 0, wxALIGN_CENTER_VERTICAL);
             sizer->Add(styleguide().getControlLabelMargin(), 0);
             sizer->Add(spinctrl_parallelworkers, 1, wxALIGN_CENTER_VERTICAL);
 
@@ -436,16 +436,7 @@ void BackupRestoreBaseFrame::OnVerboseLogChange(wxCommandEvent& WXUNUSED(event))
 
 BackupRestoreThread::BackupRestoreThread(BackupRestoreBaseFrame* frame,
     wxString server, wxString username, wxString password,
-    wxString rolename, wxString charset, wxString dbfilename,
-    wxString bkfilename, IBPP::BRF flags, int interval, int parallel,
-    wxString skipData, wxString includeData, wxString cryptPluginName,
-    wxString keyPlugin, wxString keyEncrypt)
-    :
-    dbfileM(dbfilename), bkfileM(bkfilename), intervalM(interval), parallelM(parallel),
-    skipDataM(skipData), includeDataM(includeData),
-    cryptPluginNameM(cryptPluginName), keyPluginM(keyPlugin), keyEncryptM(keyEncrypt),
-    ServiceThread(frame, server, username, password, rolename, charset)
+    wxString rolename, wxString charset)
+    : ServiceThread(frame, server, username, password, rolename, charset)
 {
-    // always use verbose flag
-    brfM = (IBPP::BRF)((int)flags | (int)IBPP::brVerbose);
 }

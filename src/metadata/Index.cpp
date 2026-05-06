@@ -56,7 +56,8 @@ void Index::loadProperties()
         " i.rdb$index_type, i.rdb$statistics, "
         " s.rdb$field_name, rc.rdb$constraint_name, i.rdb$expression_source, "
     );
-    sql += db->getInfo().getODSVersionIsHigherOrEqualTo(13, 0) ? " i.rdb$condition_source " : " null ";
+    sql += db->getInfo().getODSVersionIsHigherOrEqualTo(13, 1) ? " i.rdb$condition_source " : " null ";
+    sql += ", i.rdb$relation_name ";
     sql +=
         " from rdb$indices i "
         " left join rdb$index_segments s on i.rdb$index_name = s.rdb$index_name "
@@ -65,43 +66,44 @@ void Index::loadProperties()
         " where i.rdb$index_name = ? "
         " order by i.rdb$index_name, s.rdb$field_position ";
 
-    IBPP::Statement& st1 = loader->getStatement(sql);
+    fr::IStatementPtr& st1 = loader->getStatement(sql);
 
-    st1->Set(1, wx2std(getName_(), converter));
-    st1->Execute();
+    st1->setString(0, wx2std(getName_(), converter));
+    st1->execute();
     Index* i = 0;
-    while (st1->Fetch())
+    while (st1->fetch())
     {
-        std::string s;
-        st1->Get(1, s);
+        std::string s = st1->getString(0);
         wxString ixname(std2wxIdentifier(s, converter));
 
         short unq, inactive, type;
-        if (st1->IsNull(2))     // null = non-unique
+        if (st1->isNull(1))     // null = non-unique
             unq = 0;
         else
-            st1->Get(2, unq);
+            unq = (short)st1->getInt32(1);
         uniqueFlagM = unq == 1;
-        if (st1->IsNull(3))     // null = active
+        if (st1->isNull(2))     // null = active
             inactive = 0;
         else
-            st1->Get(3, inactive);
+            inactive = (short)st1->getInt32(2);
         activeM = inactive == 0;
-        if (st1->IsNull(4))     // null = ascending
+        if (st1->isNull(3))     // null = ascending
             type = 0;
         else
-            st1->Get(4, type);
+            type = (short)st1->getInt32(3);
         indexTypeM = type == 0 ? itAscending : itDescending;
-        if (st1->IsNull(5))     // this can happen, see bug #1825725
+        if (st1->isNull(4))     // this can happen, see bug #1825725
             statisticsM = -1;
         else
-            st1->Get(5, statisticsM);
+            statisticsM = st1->getDouble(4);
 
-        st1->Get(6, s);
+        s = st1->getString(5);
         wxString fname(std2wxIdentifier(s, converter));
-        wxString expression;
-        readBlob(st1, 8, expressionM, converter);
-        readBlob(st1, 9, conditionM, converter);
+        readBlob(st1, 7, expressionM, converter);
+        readBlob(st1, 8, conditionM, converter);
+
+        s = st1->getString(9);
+        relationNameM = std2wxIdentifier(s, converter);
 
         if (i && i->getName_() == ixname)
             i->getSegments()->push_back(fname);
@@ -133,11 +135,11 @@ Index::Index(DatabasePtr database, const wxString& name)
 }
 
 Index::Index(bool unique, bool active, bool ascending, double statistics,
-        bool system, wxString expression, wxString condition)
+        bool system, wxString expression, wxString condition, wxString relationName)
     : MetadataItem(ntIndex), isSystemM(system), uniqueFlagM(unique),
         activeM(active), indexTypeM(ascending ? itAscending : itDescending),
         statisticsM(statistics), segmentsM(), expressionM(expression),
-        conditionM(condition)
+        conditionM(condition), relationNameM(relationName)
 {
 }
 
@@ -178,11 +180,11 @@ std::vector<wxString> *Index::getSegments()
 
 wxString Index::getFieldsAsString()
 {
+    wxString retval;
     if (!expressionM.IsEmpty())
-        return expressionM;
+        retval = expressionM;
     else
     {
-        wxString retval;
         for (std::vector<wxString>::iterator it = segmentsM.begin(); 
             it != segmentsM.end(); ++it)
         {
@@ -190,8 +192,10 @@ wxString Index::getFieldsAsString()
                 retval += ", ";
             retval += (*it);
         }
-        return retval;
     }
+    if (!conditionM.IsEmpty())
+        retval += " WHERE " + conditionM;
+    return retval;
 }
 
 Index::IndexType Index::getIndexType()
@@ -229,6 +233,16 @@ wxString Index::getExpression() const
 wxString Index::getCondition() const
 {
     return conditionM;
+}
+
+wxString Index::getRelationName() const
+{
+    if (MetadataItem* p = getParent())
+    {
+        if (p->getType() == ntTable || p->getType() == ntGTT || p->getType() == ntSysTable)
+            return p->getName_();
+    }
+    return relationNameM;
 }
 
 void Index::acceptVisitor(MetadataItemVisitor* visitor)

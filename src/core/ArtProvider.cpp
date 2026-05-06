@@ -209,6 +209,8 @@ wxBitmap ArtProvider::CreateBitmap(const wxArtID& id,
             return wxBitmap(redx24_xpm);
         if (id == ART_ShowExecutionPlan)
             return wxBitmap(plan24_xpm);
+        if (id == ART_ShowProfiler)
+            return wxBitmap(history24_xpm);
         if (id == ART_ToggleView)
             return wxBitmap(toggle24_xpm);
     }
@@ -291,6 +293,12 @@ wxBitmap ArtProvider::CreateBitmap(const wxArtID& id,
             return wxBitmap(procedure_xpm);
         if (id == ART_Procedures)
             return wxBitmap(procedures_xpm);
+        if (id == ART_Publication)
+            return wxBitmap(table_xpm);
+        if (id == ART_Publications)
+            return wxBitmap(tables_xpm);
+        if (id == ART_Replication)
+            return wxBitmap(databaseserver_xpm);
         if (id == ART_Role)
             return bitmapFromEmbeddedPNG(role16_png, sizeof(role16_png));
         if (id == ART_Roles)
@@ -303,6 +311,8 @@ wxBitmap ArtProvider::CreateBitmap(const wxArtID& id,
             return wxBitmap(databaseserver_xpm);
         if (id == ART_ShowExecutionPlan)
             return wxBitmap(plan16_xpm);
+        if (id == ART_ShowProfiler)
+            return wxBitmap(history_xpm);
         if (id == ART_SystemIndex)
             return wxBitmap(systemindex32_xpm);
         if (id == ART_SystemIndices)

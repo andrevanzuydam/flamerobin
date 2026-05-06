@@ -29,6 +29,7 @@
 #endif
 
 #include <wx/cmdline.h>
+#include <wx/settings.h>
 #include <wx/sysopt.h>
 #include <wx/utils.h>
 
@@ -40,6 +41,8 @@
 #include "config/LocaleManager.h"
 #include "core/FRError.h"
 #include "core/StringUtils.h"
+#include "engine/db/DatabaseFactory.h"
+#include "gui/FRStyleManager.h"
 #include "gui/MainFrame.h"
 #include "main.h"
 
@@ -81,6 +84,26 @@ bool Application::OnInit()
     checkEnvironment();
     LocaleManager::get().initFromConfig();
     parseCommandLine();
+
+    int backend = config().get("databaseBackend", static_cast<int>(fr::DatabaseBackend::FbCpp));
+    if (backend == static_cast<int>(fr::DatabaseBackend::IBPP))
+        fr::DatabaseFactory::setDefaultBackend(fr::DatabaseBackend::IBPP);
+    else
+        fr::DatabaseFactory::setDefaultBackend(fr::DatabaseBackend::FbCpp);
+
+#if wxCHECK_VERSION(3, 3, 0)
+    int theme = config().get(FRStyleManager::_DARKMODE_KEY, (int)FRStyleManager::ThemeSystem);
+    if (theme == FRStyleManager::ThemeLight)
+        SetAppearance(wxApp::Appearance::Light);
+    else if (theme == FRStyleManager::ThemeDark)
+        SetAppearance(wxApp::Appearance::Dark);
+    else if (theme == FRStyleManager::ThemeSystem)
+        SetAppearance(wxApp::Appearance::System);
+
+#ifdef __WXMSW__
+    MSWEnableDarkMode();
+#endif
+#endif
 
 #if defined(__WXOSX_COCOA__)
     std::setlocale(LC_CTYPE, "");

@@ -34,6 +34,7 @@
 #include <wx/tokenzr.h>
 
 #include "core/StringUtils.h"
+#include "engine/db/ibpp/IbppService.h"
 #include "frutils.h"
 #include "gui/ProgressDialog.h"
 #include "gui/UsernamePasswordDialog.h"
@@ -64,37 +65,15 @@ void adjustControlsMinWidth(std::list<wxWindow*> controls)
     }
 }
 
-void readBlob(IBPP::Statement& st, int column, wxString& result,
+void readBlob(fr::IStatementPtr& st, int column, wxString& result,
     wxMBConv* conv)
 {
     result = "";
-    if (st->IsNull(column))
+    if (st->isNull(column))
         return;
 
-    IBPP::Blob b = IBPP::BlobFactory(st->DatabasePtr(), st->TransactionPtr());
-    st->Get(column, b);
-
-    try              // if blob is empty the exception is thrown
-    {                // I tried to check st1->IsNull(1) but it doesn't work
-        b->Open();   // to this hack is the only way (for the time being)
-    }
-    catch (...)
-    {
-        return;
-    }
-
-    std::string resultBuffer;
-    char readBuffer[8192];        // 8K block
-    while (true)
-    {
-        int size = b->Read(readBuffer, 8192-1);
-        if (size <= 0)
-            break;
-        readBuffer[size] = 0;
-        resultBuffer += readBuffer;
-    }
-    result = wxString(resultBuffer.c_str(), *conv);
-    b->Close();
+    std::string s = st->getString(column);
+    result = wxString(s.c_str(), *conv);
 }
 
 wxString selectRelationColumns(Relation* t, wxWindow* parent)
@@ -178,7 +157,8 @@ bool connectDatabase(Database* db, wxWindow* parent,
 bool getService(Server* s, IBPP::Service& svc, ProgressIndicator* p,
     bool sysdba)
 {
-    if (!s->getService(svc, p, sysdba))
+    fr::IServicePtr dalSvc = s->getDALService(p, sysdba);
+    if (!dalSvc)
     {
         wxString msg;
         if (p->isCanceled())
@@ -186,7 +166,7 @@ bool getService(Server* s, IBPP::Service& svc, ProgressIndicator* p,
         else
             msg = _("None of the known database connection credentials could be used.");
         if (sysdba)
-            msg = msg = msg + "\n" + _("Please enter connection credentials with administrative rights.");
+            msg = msg + "\n" + _("Please enter connection credentials with administrative rights.");
 
         int flags = UsernamePasswordDialog::AllowTrustedUser
             | (sysdba ? 0 : UsernamePasswordDialog::AllowOtherUsername);
@@ -199,23 +179,31 @@ bool getService(Server* s, IBPP::Service& svc, ProgressIndicator* p,
 
         try
         {
-            svc = IBPP::ServiceFactory(wx2std(s->getConnectionString()),
-                wx2std(username), wx2std(password), wx2std(""), wx2std(""), wx2std(getClientLibrary()));
-            svc->Connect();
+            dalSvc = fr::DatabaseFactory::createService();
+            dalSvc->setConnectionString(wx2std(s->getConnectionString()));
+            dalSvc->setCredentials(wx2std(username), wx2std(password));
+            dalSvc->connect();
+
             // exception might be thrown. If not, we store the credentials:
             if (sysdba || username.Upper() == "SYSDBA")
                 s->setServiceSysdbaPassword(password);
             else
                 s->setServiceCredentials(username, password);
         }
-        catch(IBPP::Exception& e)
+        catch(const std::exception& e)
         {
-            wxMessageBox(e.what(), _("Error"),
+            wxMessageBox(wxString::FromUTF8(e.what()), _("Error"),
                 wxICON_ERROR | wxOK);
             return false;
         }
     }
-    return true;
+
+    if (auto ibppSvc = std::dynamic_pointer_cast<fr::IbppService>(dalSvc))
+    {
+        svc = ibppSvc->getIBPPService();
+        return true;
+    }
+    return false;
 }
 
 wxString unquote(const wxString& input, const wxString& quoteChar)

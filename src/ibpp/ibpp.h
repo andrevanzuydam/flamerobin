@@ -85,7 +85,7 @@ namespace IBPP
     enum TAM {amWrite, amRead};
 
     //  Transaction Isolation Levels
-    enum TIL {ilConcurrency, ilReadDirty, ilReadCommitted, ilConsistency};
+    enum TIL {ilConcurrency, ilReadDirty, ilReadCommitted, ilConsistency, ilReadConsistency};
 
     //  Transaction Lock Resolution
     enum TLR {lrWait, lrNoWait};
@@ -95,7 +95,7 @@ namespace IBPP
 
     //  Prepared Statement Types
     enum STT {stUnknown, stUnsupported,
-        stSelect, stInsert, stUpdate, stDelete, stDDL, stExecProcedure,
+        stSelect, stInsert, stUpdate, stDelete, stMerge, stDDL, stExecProcedure,
         stStartTransaction, stCommitTransaction, stRollbackTransaction,
         stSelectUpdate, stSetGenerator, stSavePoint};
 
@@ -167,7 +167,8 @@ namespace IBPP
         // Mandatory and mutually exclusives
         rpMendRecords = 0x1, rpValidatePages = 0x2, rpValidateFull = 0x4,
         // Options
-        rpReadOnly = 0x100, rpIgnoreChecksums = 0x200, rpKillShadows = 0x400
+        rpReadOnly = 0x100, rpIgnoreChecksums = 0x200, rpKillShadows = 0x400,
+        rpUpgrade = 0x1000
     };
 
     // TransactionFactory Flags
@@ -642,8 +643,8 @@ public:
 
         virtual void Shutdown(const std::string& dbfile, DSM flags, int sectimeout) = 0;
         virtual void Restart(const std::string& dbfile, DSM flags) = 0;
-        virtual void Sweep(const std::string& dbfile) = 0;
-        virtual void Repair(const std::string& dbfile, RPF flags) = 0;
+        virtual void Sweep(const std::string& dbfile, const int parallelWorkers = 0) = 0;
+        virtual void Repair(const std::string& dbfile, RPF flags, const int parallelWorkers = 0) = 0;
 
         virtual void StartBackup(
             const std::string& dbfile,const std::string& bkfile, const std::string& outfile = "",
@@ -704,12 +705,14 @@ public:
             bool* Reserve, bool* ReadOnly) = 0;
         virtual void TransactionInfo(int* Oldest, int* OldestActive,
             int* OldestSnapshot, int* Next) = 0;
+        virtual void CryptState(int* state) = 0;
         virtual void Statistics(int* Fetches, int* Marks,
-            int* Reads, int* Writes, int* CurrentMemory ) = 0;
+            int* Reads, int* Writes, int* CurrentMemory) = 0;
         virtual void Counts(int* Insert, int* Update, int* Delete,
             int* ReadIdx, int* ReadSeq) = 0;
         virtual void DetailedCounts(DatabaseCounts& counts) = 0;
         virtual void Users(std::vector<std::string>& users) = 0;
+        virtual void Version(std::string& version) = 0;
         virtual int Dialect() = 0;
 
         virtual void Create(int dialect) = 0;
