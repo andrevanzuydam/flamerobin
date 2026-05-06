@@ -367,7 +367,32 @@ void MetadataItemPropertiesPanel::OnIdle(wxIdleEvent& WXUNUSED(event))
 {
     Disconnect(wxID_ANY, wxEVT_IDLE);
     wxBusyCursor bc;
-    loadPage();
+    // Issue #378: if loadPage() throws (e.g. the dependency query uses
+    // SQL syntax not supported by the connected server, like FB 1.x),
+    // the panel stays permanently on the "Please wait while the data is
+    // being loaded..." placeholder and a future retry never fires
+    // because htmlReloadRequestedM never resets. Catch any exception,
+    // render an error page in place of the placeholder, and reset the
+    // request flag so a manual Refresh can try again.
+    try
+    {
+        loadPage();
+    }
+    catch (const std::exception& e)
+    {
+        wxString msg = wxString::FromUTF8(e.what());
+        html_window->setPageSource(
+            "<html><body><h3>Error loading page</h3><pre>"
+            + msg + "</pre><p>Use the Refresh action to try again.</p>"
+            "</body></html>");
+    }
+    catch (...)
+    {
+        html_window->setPageSource(
+            "<html><body><h3>Error loading page</h3>"
+            "<p>Use the Refresh action to try again.</p>"
+            "</body></html>");
+    }
     htmlReloadRequestedM = false;
 }
 
