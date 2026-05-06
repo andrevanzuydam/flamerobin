@@ -63,6 +63,12 @@
                         <caption>Separate settings for individual objects</caption>
                     </option>
                 </setting>
+                <setting type="checkbox">
+                    <caption>Don't restore maximised state</caption>
+                    <description>If checked, windows reopen at their previous size and position but never auto-maximised. Use this when an accidentally maximised properties or query window keeps reopening full-screen.</description>
+                    <key>DontRestoreMaximized</key>
+                    <default>0</default>
+                </setting>
             </enables>
         </setting>
 				<setting type="file" platform="win" arch="x86">

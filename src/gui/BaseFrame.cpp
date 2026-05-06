@@ -104,6 +104,16 @@ void BaseFrame::readConfigSettings()
         }
     }
 
+    // Issue #296: once a frame is opened maximised and then closed, the
+    // restore code below permanently re-opens every future instance
+    // maximised — even properties panes, which the reporter found
+    // "very disturbing". Honour an opt-out: when "DontRestoreMaximized"
+    // is true, treat the persisted maximised flag as false. The size
+    // and position are still restored, only the maximised bit is
+    // ignored.
+    if (config().get("DontRestoreMaximized", false))
+        maximized = false;
+
     // check whether rect intersects at least one monitor rect
     // otherwise (for example because monitor is not attached any more
     // or a remote desktop connection is active) use the default size and position
