@@ -2650,7 +2650,13 @@ bool ExecuteSqlFrame::execute(wxString sql, const wxString& terminator,
         sae.scroll();
         {
             wxStopWatch sw;
-            statementM->prepare(wx2std(sql, databaseM->getCharsetConverter()));
+            // Rewrite Mustache-style {{Identifier}} placeholders to
+            // Firebird's :Identifier named-parameter syntax before the
+            // statement reaches the engine. Pure pass-through if the
+            // SQL contains no `{{`, so existing :Foo / ? queries are
+            // completely unaffected.
+            wxString preparedSql = expandMustachePlaceholders(sql);
+            statementM->prepare(wx2std(preparedSql, databaseM->getCharsetConverter()));
             log(wxString::Format(_("Statement prepared (elapsed time: %s)."),
                 millisToTimeString(sw.Time()).c_str()));
         }

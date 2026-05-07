@@ -276,3 +276,102 @@ wxString wrapText(const wxString& text, size_t maxWidth, size_t indent)
     }
     return wrappedText;
 }
+
+namespace
+{
+    inline bool isIdentStart(wxUniChar c)
+    {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
+    }
+    inline bool isIdentCont(wxUniChar c)
+    {
+        return isIdentStart(c) || (c >= '0' && c <= '9');
+    }
+}
+
+wxString expandMustachePlaceholders(const wxString& sql)
+{
+    // Cheap fast-path: nothing to do if the SQL has no '{{' at all.
+    if (sql.Find(wxT("{{")) == wxNOT_FOUND)
+        return sql;
+
+    wxString out;
+    out.reserve(sql.length());
+
+    const size_t n = sql.length();
+    for (size_t i = 0; i < n; )
+    {
+        wxUniChar c = sql[i];
+
+        // Single-line comment: -- ... \n
+        if (c == '-' && i + 1 < n && sql[i + 1] == '-')
+        {
+            while (i < n && sql[i] != '\n')
+                out += sql[i++];
+            continue;
+        }
+
+        // Block comment: /* ... */
+        if (c == '/' && i + 1 < n && sql[i + 1] == '*')
+        {
+            out += sql[i++]; out += sql[i++];
+            while (i < n)
+            {
+                if (sql[i] == '*' && i + 1 < n && sql[i + 1] == '/')
+                {
+                    out += sql[i++]; out += sql[i++];
+                    break;
+                }
+                out += sql[i++];
+            }
+            continue;
+        }
+
+        // String literals — copy through verbatim. Doubled quotes inside
+        // the literal (Firebird's escape) are handled by treating the
+        // pair as two ordinary characters.
+        if (c == '\'' || c == '"')
+        {
+            wxUniChar quote = c;
+            out += sql[i++];
+            while (i < n)
+            {
+                if (sql[i] == quote)
+                {
+                    out += sql[i++];
+                    if (i < n && sql[i] == quote) // doubled-quote escape
+                    {
+                        out += sql[i++];
+                        continue;
+                    }
+                    break;
+                }
+                out += sql[i++];
+            }
+            continue;
+        }
+
+        // Mustache placeholder: {{Identifier}}
+        if (c == '{' && i + 2 < n && sql[i + 1] == '{'
+            && isIdentStart(sql[i + 2]))
+        {
+            size_t j = i + 2;
+            while (j < n && isIdentCont(sql[j]))
+                ++j;
+            if (j + 1 < n && sql[j] == '}' && sql[j + 1] == '}')
+            {
+                out += ':';
+                out += sql.SubString(i + 2, j - 1);
+                i = j + 2;
+                continue;
+            }
+            // Not a well-formed placeholder — fall through and copy
+            // characters as-is so we don't change behaviour for code
+            // that legitimately contains "{{" (rare, but possible
+            // inside, say, a custom UDF that takes JSON).
+        }
+
+        out += sql[i++];
+    }
+    return out;
+}

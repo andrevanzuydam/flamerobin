@@ -62,6 +62,22 @@ wxString loadEntireFile(const wxFileName& filename);
 //  Code adapted from wxWidgets' wxTextWrapper function.
 wxString wrapText(const wxString& text, size_t maxWidth, size_t indent);
 
+//! Rewrites Mustache-style {{Identifier}} placeholders in a SQL string to
+//  Firebird-native :Identifier named parameters, leaving everything else
+//  (including the contents of string literals and SQL comments) untouched.
+//
+//  Why this exists: tools like Apache Superset, Metabase, dbt and many
+//  reporting front-ends parameterise queries with `{{name}}` syntax. Pasting
+//  such queries into the FlameRobin SQL editor used to fail because Firebird
+//  doesn't recognise that form. This helper makes them runnable as-is —
+//  Firebird sees the rewritten `:name` placeholders and the InsertParameters
+//  dialog prompts for them in the usual way.
+//
+//  Identifiers must match `[A-Za-z_][A-Za-z0-9_]*`. Anything inside
+//  '...' / "..." string literals, /* ... */ block comments, or -- line
+//  comments is preserved verbatim.
+wxString expandMustachePlaceholders(const wxString& sql);
+
 
 #include "engine/db/ITransaction.h"
 
