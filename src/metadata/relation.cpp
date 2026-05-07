@@ -30,8 +30,6 @@
     #include "wx/wx.h"
 #endif
 
-#include <ibpp.h>
-
 #include "core/StringUtils.h"
 #include "core/FRError.h"
 #include "engine/MetadataLoader.h"

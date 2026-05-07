@@ -30,8 +30,6 @@
     #include "wx/wx.h"
 #endif
 
-#include <ibpp.h>
-
 #include "core/FRError.h"
 #include "core/ProgressIndicator.h"
 #include "core/StringUtils.h"
