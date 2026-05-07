@@ -228,5 +228,30 @@ std::string IbppService::getVersion()
     return version;
 }
 
+void IbppService::setSweepInterval(const std::string& dbPath, int value)
+{
+    serviceM->SetSweepInterval(dbPath, value);
+}
+
+void IbppService::setPageBuffers(const std::string& dbPath, int value)
+{
+    serviceM->SetPageBuffers(dbPath, value);
+}
+
+void IbppService::setSyncWrite(const std::string& dbPath, bool sync)
+{
+    serviceM->SetSyncWrite(dbPath, sync);
+}
+
+void IbppService::setReserveSpace(const std::string& dbPath, bool reserve)
+{
+    serviceM->SetReserveSpace(dbPath, reserve);
+}
+
+void IbppService::setReadOnly(const std::string& dbPath, bool readOnly)
+{
+    serviceM->SetReadOnly(dbPath, readOnly);
+}
+
 } // namespace fr
 

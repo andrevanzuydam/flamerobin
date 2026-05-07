@@ -30,9 +30,8 @@
 #include <wx/listbox.h>
 #include <wx/panel.h>
 
+#include <memory>
 #include <string>
-
-#include <ibpp.h>
 
 #include "core/Observer.h"
 #include "controls/LogTextControl.h"
@@ -40,15 +39,16 @@
 #include "metadata/database.h"
 #include "metadata/MetadataClasses.h"
 
+namespace fbcpp { class EventListener; }
+
 class EventLogControl;
 
-class EventWatcherFrame : public BaseFrame, public Observer,
-    public IBPP::EventInterface
+class EventWatcherFrame : public BaseFrame, public Observer
 {
 private:
     DatabaseWeakPtr databaseM;
     wxTimer timerM;
-    IBPP::Events eventsM;
+    std::unique_ptr<fbcpp::EventListener> eventsM;
 
     wxPanel* panel_controls;
     wxStaticText* static_text_monitored;
@@ -71,9 +71,6 @@ private:
     DatabasePtr getDatabase() const;
     bool setTimerActive(bool active);
     void updateMonitoringActive();
-
-    virtual void ibppEventHandler(IBPP::Events events,
-        const std::string& name, int count);
 
     // observer stuff
     virtual void subjectRemoved(Subject* subject);

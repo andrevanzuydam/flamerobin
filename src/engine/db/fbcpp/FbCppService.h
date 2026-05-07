@@ -67,6 +67,12 @@ public:
     virtual bool versionIsHigherOrEqualTo(int major, int minor) override;
     virtual std::string getVersion() override;
 
+    virtual void setSweepInterval(const std::string& dbPath, int value) override;
+    virtual void setPageBuffers(const std::string& dbPath, int value) override;
+    virtual void setSyncWrite(const std::string& dbPath, bool sync) override;
+    virtual void setReserveSpace(const std::string& dbPath, bool reserve) override;
+    virtual void setReadOnly(const std::string& dbPath, bool readOnly) override;
+
 private:
     void pushLine(std::string_view line);
     void runService(std::function<void()> func);

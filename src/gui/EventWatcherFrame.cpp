@@ -21,6 +21,11 @@
   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
+// fb-cpp must precede wxWidgets because Windows API headers (pulled in by
+// wx/wx.h) define a `Timestamp` macro / collide with `<chrono>` symbols
+// referenced by fb-cpp's types.h.
+#include <fb-cpp/fb-cpp.h>
+
 // For compilers that support precompilation, includes "wx/wx.h".
 #include "wx/wxprec.h"
 
@@ -38,6 +43,7 @@
 #include "controls/LogTextControl.h"
 #include "core/FRError.h"
 #include "core/StringUtils.h"
+#include "engine/db/fbcpp/FbCppDatabase.h"
 #include "gui/EventWatcherFrame.h"
 #include "gui/MultilineEnterDialog.h"
 #include "gui/StyleGuide.h"
@@ -72,7 +78,7 @@ void EventLogControl::logEvent(const wxString& name, int count)
 }
 
 EventWatcherFrame::EventWatcherFrame(wxWindow* parent, DatabasePtr db)
-    : BaseFrame(parent, -1, wxEmptyString), databaseM(db), eventsM(0)
+    : BaseFrame(parent, -1, wxEmptyString), databaseM(db)
 {
     wxASSERT(db);
     timerM.SetOwner(this, ID_timer);
@@ -210,30 +216,56 @@ void EventWatcherFrame::addEvents(wxString& s)
 
 void EventWatcherFrame::defineMonitoredEvents()
 {
-    if (eventsM != 0)
+    if (!eventsM)
+        return;
+
+    DatabasePtr database = getDatabase();
+    if (!database)
+        return;
+
+    // fb-cpp's EventListener is constructed with a fixed event list and
+    // can't be mutated, so we rebuild it whenever the watch set changes.
+    auto fb = std::dynamic_pointer_cast<fr::FbCppDatabase>(
+        database->getDALDatabase());
+    if (!fb)
     {
-        // prevent timer from messing our business
-        bool timerRunning = timerM.IsRunning();
-        setTimerActive(false);
-
-        // get a list of events to be monitored
-        std::vector<std::string> events;
-        for (int i = 0; i < (int)listbox_monitored->GetCount(); i++)
-            events.push_back(wx2std(listbox_monitored->GetString(i)));
-
-        eventsM->Clear();
-        std::vector<std::string>::const_iterator it;
-        for (it = events.begin(); it != events.end(); it++)
-        {
-            eventsM->Add(*it, this);
-            // make IBPP::Events pick up the initial event count
-            eventsM->Dispatch();
-        }
-
-        updateControls();
-        if (timerRunning)
-            setTimerActive(true);
+        eventsM.reset();
+        updateMonitoringActive();
+        return;
     }
+
+    std::vector<std::string> events;
+    events.reserve(listbox_monitored->GetCount());
+    for (int i = 0; i < (int)listbox_monitored->GetCount(); i++)
+        events.push_back(wx2std(listbox_monitored->GetString(i)));
+
+    eventsM.reset();
+
+    if (events.empty())
+    {
+        updateMonitoringActive();
+        return;
+    }
+
+    // Callback fires on fb-cpp's dispatcher thread; marshal back to the UI
+    // thread before touching wx widgets.
+    auto callback = [this](const std::vector<fbcpp::EventCount>& counts) {
+        std::vector<fbcpp::EventCount> snapshot(counts);
+        CallAfter([this, snapshot]() {
+            for (const auto& c : snapshot)
+            {
+                if (c.count > 0)
+                    eventlog_received->logEvent(
+                        wxString(c.name.c_str(), wxConvUTF8),
+                        static_cast<int>(c.count));
+            }
+        });
+    };
+
+    eventsM = std::make_unique<fbcpp::EventListener>(
+        fb->getAttachment(), events, callback);
+
+    updateControls();
 }
 
 DatabasePtr EventWatcherFrame::getDatabase() const
@@ -256,8 +288,12 @@ bool EventWatcherFrame::setTimerActive(bool active)
 
 void EventWatcherFrame::updateMonitoringActive()
 {
-    if (eventsM != 0)
+    if (eventsM)
     {
+        // fb-cpp delivers events on its own dispatcher thread, so the
+        // legacy 100 ms wxTimer poll isn't needed; we keep timerM.Start
+        // only to reflect "monitoring active" in setTimerActive(false)
+        // checks elsewhere.
         setTimerActive(true);
         button_monitor->SetLabel(_("Stop &Monitoring"));
         eventlog_received->logAction(_("Monitoring started"));
@@ -269,12 +305,6 @@ void EventWatcherFrame::updateMonitoringActive()
         eventlog_received->logAction(_("Monitoring stopped"));
     }
     updateControls();
-}
-
-void EventWatcherFrame::ibppEventHandler(IBPP::Events events,
-    const std::string& name, int count)
-{
-    eventlog_received->logEvent(name, count);
 }
 
 //! closes window if database is removed (unregistered)
@@ -412,8 +442,10 @@ void EventWatcherFrame::OnButtonRemoveClick(wxCommandEvent& WXUNUSED(event))
 
 void EventWatcherFrame::OnButtonStartStopClick(wxCommandEvent& WXUNUSED(event))
 {
-    if (eventsM != 0)
-        eventsM.clear();
+    if (eventsM)
+    {
+        eventsM.reset();
+    }
     else
     {
         DatabasePtr database = getDatabase();
@@ -422,9 +454,37 @@ void EventWatcherFrame::OnButtonStartStopClick(wxCommandEvent& WXUNUSED(event))
             Close();
             return;
         }
-        IBPP::Database db(database->getIBPPDatabase());
-        eventsM = IBPP::EventsFactory(db);
-        defineMonitoredEvents();
+        auto fb = std::dynamic_pointer_cast<fr::FbCppDatabase>(
+            database->getDALDatabase());
+        if (!fb)
+        {
+            wxMessageBox(_("Event monitoring requires the fb-cpp backend."),
+                _("Error"), wxOK | wxICON_ERROR);
+            return;
+        }
+        // Bootstrap with whatever event names are listed; defineMonitoredEvents
+        // builds the actual EventListener.
+        std::vector<std::string> seed;
+        seed.reserve(listbox_monitored->GetCount());
+        for (int i = 0; i < (int)listbox_monitored->GetCount(); i++)
+            seed.push_back(wx2std(listbox_monitored->GetString(i)));
+        if (!seed.empty())
+        {
+            eventsM = std::make_unique<fbcpp::EventListener>(
+                fb->getAttachment(), seed,
+                [this](const std::vector<fbcpp::EventCount>& counts) {
+                    std::vector<fbcpp::EventCount> snapshot(counts);
+                    CallAfter([this, snapshot]() {
+                        for (const auto& c : snapshot)
+                        {
+                            if (c.count > 0)
+                                eventlog_received->logEvent(
+                                    wxString(c.name.c_str(), wxConvUTF8),
+                                    static_cast<int>(c.count));
+                        }
+                    });
+                });
+        }
     }
     updateMonitoringActive();
 }
@@ -436,9 +496,11 @@ void EventWatcherFrame::OnListBoxSelected(wxCommandEvent& WXUNUSED(event))
 
 void EventWatcherFrame::OnTimer(wxTimerEvent& WXUNUSED(event))
 {
-    if (eventsM != 0)
-        eventsM->Dispatch();
-    else // stop timer, update UI
+    // fb-cpp delivers events on its own dispatcher thread; nothing to poll
+    // here. We still receive the timer tick because legacy callers may have
+    // started it; keep the no-op so the timer-active state remains the
+    // monitoring-active indicator.
+    if (!eventsM)
         updateMonitoringActive();
 }
 

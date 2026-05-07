@@ -22,13 +22,79 @@
 */
 
 #include "engine/db/fbcpp/FbCppService.h"
+#include <cstdint>
 #include <stdexcept>
+#include <vector>
 #include <firebird/Interface.h>
+#include <firebird/impl/consts_pub.h>
 
 extern "C" Firebird::IMaster* ISC_EXPORT fb_get_master_interface();
 
+namespace
+{
+
+// Subclass to expose ServiceManager's protected action helpers so we can
+// run isc_action_svc_properties synchronously without spawning a worker
+// thread.
+class PropertyServiceManager final : public fbcpp::ServiceManager
+{
+public:
+    using fbcpp::ServiceManager::ServiceManager;
+    using fbcpp::ServiceManager::startAction;
+    using fbcpp::ServiceManager::waitForCompletion;
+};
+
+inline void appendInt32(std::vector<std::uint8_t>& spb, std::uint8_t tag, std::int32_t value)
+{
+    spb.push_back(tag);
+    spb.push_back(static_cast<std::uint8_t>(value & 0xff));
+    spb.push_back(static_cast<std::uint8_t>((value >> 8) & 0xff));
+    spb.push_back(static_cast<std::uint8_t>((value >> 16) & 0xff));
+    spb.push_back(static_cast<std::uint8_t>((value >> 24) & 0xff));
+}
+
+inline void appendByte(std::vector<std::uint8_t>& spb, std::uint8_t tag, std::uint8_t value)
+{
+    spb.push_back(tag);
+    spb.push_back(value);
+}
+
+std::vector<std::uint8_t> beginPropertiesSpb(const std::string& dbPath)
+{
+    std::vector<std::uint8_t> spb;
+    spb.reserve(8 + dbPath.size());
+    spb.push_back(static_cast<std::uint8_t>(isc_action_svc_properties));
+    spb.push_back(static_cast<std::uint8_t>(isc_spb_dbname));
+    const auto len = static_cast<std::uint16_t>(dbPath.size());
+    spb.push_back(static_cast<std::uint8_t>(len & 0xff));
+    spb.push_back(static_cast<std::uint8_t>((len >> 8) & 0xff));
+    spb.insert(spb.end(), dbPath.begin(), dbPath.end());
+    return spb;
+}
+
+} // namespace
+
 namespace fr
 {
+
+namespace
+{
+
+// Run a one-shot properties action against the service manager and wait
+// for it to finish. Synchronous because callers (e.g. the inline
+// "Edit Sweep Interval" UI) expect the change to be applied before
+// returning. Builds and tears down its own ServiceManager so the
+// action is fully isolated from any other in-flight service work.
+void runPropertiesAction(fbcpp::Client& client,
+    const fbcpp::ServiceManagerOptions& options,
+    const std::vector<std::uint8_t>& spb)
+{
+    PropertyServiceManager mgr(client, options);
+    mgr.startAction(spb);
+    mgr.waitForCompletion();
+}
+
+} // namespace
 
 FbCppService::FbCppService()
 {
@@ -227,6 +293,69 @@ bool FbCppService::versionIsHigherOrEqualTo(int major, int minor)
 std::string FbCppService::getVersion()
 {
     return "Firebird (fb-cpp)";
+}
+
+void FbCppService::setSweepInterval(const std::string& dbPath, int value)
+{
+    if (!clientM)
+        connect();
+    auto spb = beginPropertiesSpb(dbPath);
+    appendInt32(spb, isc_spb_prp_sweep_interval, value);
+    runPropertiesAction(*clientM,
+        fbcpp::ServiceManagerOptions().setServer(connStrM)
+            .setUserName(userM).setPassword(passwordM),
+        spb);
+}
+
+void FbCppService::setPageBuffers(const std::string& dbPath, int value)
+{
+    if (!clientM)
+        connect();
+    auto spb = beginPropertiesSpb(dbPath);
+    appendInt32(spb, isc_spb_prp_page_buffers, value);
+    runPropertiesAction(*clientM,
+        fbcpp::ServiceManagerOptions().setServer(connStrM)
+            .setUserName(userM).setPassword(passwordM),
+        spb);
+}
+
+void FbCppService::setSyncWrite(const std::string& dbPath, bool sync)
+{
+    if (!clientM)
+        connect();
+    auto spb = beginPropertiesSpb(dbPath);
+    appendByte(spb, isc_spb_prp_write_mode,
+        sync ? isc_spb_prp_wm_sync : isc_spb_prp_wm_async);
+    runPropertiesAction(*clientM,
+        fbcpp::ServiceManagerOptions().setServer(connStrM)
+            .setUserName(userM).setPassword(passwordM),
+        spb);
+}
+
+void FbCppService::setReserveSpace(const std::string& dbPath, bool reserve)
+{
+    if (!clientM)
+        connect();
+    auto spb = beginPropertiesSpb(dbPath);
+    appendByte(spb, isc_spb_prp_reserve_space,
+        reserve ? isc_spb_prp_res_use_full : isc_spb_prp_res);
+    runPropertiesAction(*clientM,
+        fbcpp::ServiceManagerOptions().setServer(connStrM)
+            .setUserName(userM).setPassword(passwordM),
+        spb);
+}
+
+void FbCppService::setReadOnly(const std::string& dbPath, bool readOnly)
+{
+    if (!clientM)
+        connect();
+    auto spb = beginPropertiesSpb(dbPath);
+    appendByte(spb, isc_spb_prp_access_mode,
+        readOnly ? isc_spb_prp_am_readonly : isc_spb_prp_am_readwrite);
+    runPropertiesAction(*clientM,
+        fbcpp::ServiceManagerOptions().setServer(connStrM)
+            .setUserName(userM).setPassword(passwordM),
+        spb);
 }
 
 } // namespace fr

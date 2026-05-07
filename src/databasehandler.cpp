@@ -32,6 +32,9 @@
 
 #include "core/StringUtils.h"
 #include "core/URIProcessor.h"
+#include "engine/db/DatabaseFactory.h"
+#include "engine/db/IDatabase.h"
+#include "engine/db/IService.h"
 #include "gui/GUIURIHandlerHelper.h"
 #include "gui/ExecuteSql.h"
 #include "metadata/server.h"
@@ -79,12 +82,13 @@ bool DatabaseInfoHandler::handleURI(URI& uri)
     if (!d || !w || !d->isConnected())
          return true;
 
-    IBPP::Database db = d->getIBPPDatabase();
-    IBPP::Service svc = IBPP::ServiceFactory(
-        wx2std(d->getServer()->getConnectionString()),
-        db->Username(), db->UserPassword(), db->RoleName(), db->CharSet()
-    );
-    svc->Connect();
+    fr::IDatabasePtr dal = d->getDALDatabase();
+    fr::IServicePtr svc = fr::DatabaseFactory::createService();
+    svc->setConnectionString(wx2std(d->getServer()->getConnectionString()));
+    svc->setCredentials(wx2std(d->getUsername()), wx2std(d->getDecryptedPassword()));
+    svc->setRole(wx2std(d->getRole()));
+    svc->setCharset(wx2std(d->getConnectionCharset()));
+    svc->connect();
 
     if (isEditSweep || isEditPageBuffers || isEditLinger)
     {
@@ -94,13 +98,13 @@ bool DatabaseInfoHandler::handleURI(URI& uri)
         {
             oldValue = d->getInfo().getSweep();
             title = _("Enter the new Sweep Interval");
-            label = _("Sweep Interval"); 
+            label = _("Sweep Interval");
         }
         else if (isEditPageBuffers)
         {
             oldValue = d->getInfo().getBuffers();
             title = _("Enter the new value for Page Buffers");
-            label = _("Page Buffers"); 
+            label = _("Page Buffers");
         }
         else if (isEditLinger)
         {
@@ -128,16 +132,16 @@ bool DatabaseInfoHandler::handleURI(URI& uri)
                 break;
 
             if (isEditSweep)
-                svc->SetSweepInterval(wx2std(d->getPath()), value);
+                svc->setSweepInterval(wx2std(d->getPath()), static_cast<int>(value));
             else if (isEditPageBuffers)
-                svc->SetPageBuffers(wx2std(d->getPath()), value);
+                svc->setPageBuffers(wx2std(d->getPath()), static_cast<int>(value));
             else if (isEditLinger)
                 execSql(NULL, wxString(_("Alter database")), d, wxString::Format("ALTER DATABASE SET LINGER TO %d ; commit; ", value, w), true);
             // Before reloading the info, re-attach to the database
             // otherwise the sweep interval won't be changed for FB Classic
             // Server.
-            db->Disconnect();
-            db->Connect();
+            dal->disconnect();
+            dal->connect();
             d->loadInfo();
             break;
         }
@@ -151,22 +155,22 @@ bool DatabaseInfoHandler::handleURI(URI& uri)
 
         // setting these properties requires that the database is
         // disconnected.
-        db->Disconnect();
+        dal->disconnect();
 
         if (isEditForcedWrites)
-            svc->SetSyncWrite(wx2std(d->getPath()), fw);
+            svc->setSyncWrite(wx2std(d->getPath()), fw);
         if (isEditReserve)
-            svc->SetReserveSpace(wx2std(d->getPath()), reserve);
+            svc->setReserveSpace(wx2std(d->getPath()), reserve);
         if (isEditReadOnly)
-            svc->SetReadOnly(wx2std(d->getPath()), ro);
+            svc->setReadOnly(wx2std(d->getPath()), ro);
 
-        db->Connect();
+        dal->connect();
 
         // load the database info because the info values are changed.
         d->loadInfo();
     }
 
-    svc->Disconnect();
+    svc->disconnect();
     return true;
 }
 

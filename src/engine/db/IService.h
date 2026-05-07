@@ -61,6 +61,14 @@ public:
 
     virtual bool versionIsHigherOrEqualTo(int major, int minor) = 0;
     virtual std::string getVersion() = 0;
+
+    // Database property setters via the services API
+    // (isc_action_svc_properties).
+    virtual void setSweepInterval(const std::string& dbPath, int value) = 0;
+    virtual void setPageBuffers(const std::string& dbPath, int value) = 0;
+    virtual void setSyncWrite(const std::string& dbPath, bool sync) = 0;
+    virtual void setReserveSpace(const std::string& dbPath, bool reserve) = 0;
+    virtual void setReadOnly(const std::string& dbPath, bool readOnly) = 0;
 };
 
 } // namespace fr
