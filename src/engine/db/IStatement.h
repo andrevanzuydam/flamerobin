@@ -106,6 +106,27 @@ public:
     virtual ITransactionPtr getTransaction() = 0;
 };
 
+// Convenience: Firebird metadata uses both BOOLEAN (FB 3+) and SMALLINT
+// (legacy 0/1/-1 flags like RDB$NULL_FLAG, and even RDB$SQL_SECURITY on
+// some FB 4.x point releases) to express boolean-ish values. The fb-cpp
+// backend strictly type-checks getBool() against the column's actual
+// descriptor and throws "Invalid type: actual type bool, descriptor
+// type 500" for SMALLINT columns, even though the value semantics are
+// identical (non-zero = true). IBPP was lenient here. Use this helper
+// at every metadata read site so we don't crash on either backend
+// regardless of how the column happens to be declared.
+inline bool readBoolish(IStatement& st, int index)
+{
+    return st.getColumnType(index) == ColumnType::Boolean
+        ? st.getBool(index)
+        : st.getInt32(index) != 0;
+}
+
+inline bool readBoolish(const IStatementPtr& st, int index)
+{
+    return readBoolish(*st, index);
+}
+
 } // namespace fr
 
 #endif // FR_ISTATEMENT_H

@@ -151,10 +151,11 @@ void Relation::loadProperties()
         }
         else
             setSource(wxEmptyString);
-        // Sql Security
+        // Sql Security — column may be BOOLEAN (FB 4+) or SMALLINT
+        // depending on FB version; readBoolish handles both.
         if (!st1->isNull(4))
         {
-            bool b = st1->getBool(4);
+            bool b = fr::readBoolish(st1, 4);
             sqlSecurityM = wxString(b ? "SQL SECURITY DEFINER" : "SQL SECURITY INVOKER");
 
         }
@@ -236,7 +237,7 @@ void Relation::loadChildren()
         wxString fname(std2wxIdentifier(s, converter));
         bool notNull = false;
         if (!st1->isNull(1))
-            notNull = st1->getBool(1);
+            notNull = fr::readBoolish(st1, 1);
         s = st1->getString(2);
         wxString source(std2wxIdentifier(s, converter));
         wxString collation;

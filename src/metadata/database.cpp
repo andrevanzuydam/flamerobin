@@ -1432,7 +1432,7 @@ void Database::loadDatabaseInfo()
             lingerM = 0;
         if (!st1->isNull(4))
         {
-            bool b = st1->getBool(4);
+            bool b = fr::readBoolish(st1, 4);
             sqlSecurityM = wxString(b ? "SQL SECURITY DEFINER" : "SQL SECURITY INVOKER");
         }
         else

@@ -309,7 +309,7 @@ wxString Package::getSqlSecurity()
         st1->fetch();
         if (st1->isNull(0))
             return wxString();
-        bool b = st1->getBool(0);
+        bool b = fr::readBoolish(st1, 0);
         return wxString(b ? "SQL SECURITY DEFINER" : "SQL SECURITY INVOKER");
     }
     else

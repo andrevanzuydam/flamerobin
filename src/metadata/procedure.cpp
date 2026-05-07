@@ -117,7 +117,7 @@ void Procedure::loadChildren()
         }
         bool notNull = false;
         if (!st1->isNull(4))
-            notNull = st1->getBool(4);
+            notNull = fr::readBoolish(st1, 4);
         if (!st1->isNull(5))
             mechanism = (short)st1->getInt32(5);
         wxString field;
@@ -336,7 +336,7 @@ wxString Procedure::getSqlSecurity()
         st1->fetch();
         if (st1->isNull(0))
             return wxString();
-        bool b = st1->getBool(0);
+        bool b = fr::readBoolish(st1, 0);
         return wxString(b ? "SQL SECURITY DEFINER" : "SQL SECURITY INVOKER");
     }
     else

@@ -166,7 +166,7 @@ void Domain::loadProperties(fr::IStatementPtr& statement, wxMBConv* converter)
     bool notNull = false;
     if (!statement->isNull(8))
     {
-        notNull = statement->getBool(8);
+        notNull = fr::readBoolish(statement, 8);
     }
     nullableM = !notNull;
     hasDefaultM = !statement->isNull(9);

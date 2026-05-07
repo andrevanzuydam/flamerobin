@@ -262,7 +262,7 @@ void Trigger::loadProperties()
 
         if (!st1->isNull(7))
         {
-            bool b = st1->getBool(7);
+            bool b = fr::readBoolish(st1, 7);
             sqlSecurityM = b ? "SQL SECURITY DEFINER" : "SQL SECURITY INVOKER";
         }
         else

@@ -160,7 +160,7 @@ void Function::loadChildren()
         }
         bool notNull = false;
         if (!st1->isNull(11))
-            notNull = st1->getBool(11);
+            notNull = fr::readBoolish(st1, 11);
         if (!st1->isNull(12)) {
             mechanism = (short)st1->getInt32(12);
         }
@@ -303,7 +303,7 @@ wxString Function::getSqlSecurity()
 		st1->fetch();
 		if (st1->isNull(0))
 			return wxString();
-		bool b = st1->getBool(0);
+		bool b = fr::readBoolish(st1, 0);
 		return wxString(b ? "SQL SECURITY DEFINER" : "SQL SECURITY INVOKER");
 	}
 	else
