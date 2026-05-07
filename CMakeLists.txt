@@ -472,7 +472,7 @@ if (WIN32)
 
 	# Create the revision include file
 	execute_process(
-		COMMAND update-revision-info.cmd
+		COMMAND cmd /c "${CMAKE_SOURCE_DIR}/update-revision-info.cmd"
 		WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 	)
     list(APPEND FR_LIBS ws2_32 mswsock shlwapi version advapi32 gdi32 user32 comctl32 comdlg32 shell32 ole32 oleaut32 uuid imm32 msimg32 winmm uxtheme rpcrt4 winspool)

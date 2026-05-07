@@ -1,7 +1,24 @@
 vcpkg_acquire_msys(MSYS_ROOT PACKAGES unzip)
 vcpkg_add_to_path(${MSYS_ROOT}/usr/bin)
 
-vcpkg_find_acquire_program(MSBUILD)
+# vcpkg dropped MSBUILD from vcpkg_find_acquire_program; resolve via vswhere instead.
+find_program(MSBUILD NAMES msbuild msbuild.exe)
+if(NOT MSBUILD)
+    set(_VSWHERE "$ENV{ProgramFiles\(x86\)}/Microsoft Visual Studio/Installer/vswhere.exe")
+    if(NOT EXISTS "${_VSWHERE}")
+        message(FATAL_ERROR "vswhere.exe not found at ${_VSWHERE}; install Visual Studio Installer or set MSBUILD manually.")
+    endif()
+    execute_process(
+        COMMAND "${_VSWHERE}" -latest -requires Microsoft.Component.MSBuild -find "MSBuild/**/Bin/MSBuild.exe" -nologo
+        OUTPUT_VARIABLE _VSWHERE_OUT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    string(REPLACE "\\" "/" _VSWHERE_OUT "${_VSWHERE_OUT}")
+    string(REGEX REPLACE "\r?\n.*" "" MSBUILD "${_VSWHERE_OUT}")
+    if(NOT MSBUILD OR NOT EXISTS "${MSBUILD}")
+        message(FATAL_ERROR "Unable to locate MSBuild.exe via vswhere; install the 'Desktop development with C++' workload.")
+    endif()
+endif()
 get_filename_component(MSBUILD_DIR "${MSBUILD}" DIRECTORY)
 vcpkg_add_to_path("${MSBUILD_DIR}")
 
