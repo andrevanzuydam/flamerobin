@@ -40,3 +40,13 @@ config.status
 configure~
 _codeql_detected_source_root
 wxWidgets/
+
+# vcpkg outputs
+vcpkg_archives/
+vcpkg_installed/
+
+# Local build/install logs
+cmake-configure.log
+cmake-build.log
+iscc.log
+vcpkg-install.log
