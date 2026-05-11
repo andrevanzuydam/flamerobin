@@ -33,6 +33,7 @@
 
 #include "core/StringUtils.h"
 #include "engine/MetadataLoader.h"
+#include "frutils.h"
 #include "metadata/Collation.h"
 #include "metadata/column.h"
 #include "metadata/database.h"
@@ -97,11 +98,11 @@ void LoadDescriptionVisitor::loadDescription(MetadataItem* object,
         st1->execute();
         st1->fetch();
 
+        // RDB$DESCRIPTION is a BLOB SUB_TYPE TEXT; readBlob() reads
+        // either BLOB or plain text correctly without tripping the
+        // fb-cpp backend's strict descriptor check.
         if (!st1->isNull(0))
-        {
-            std::string value = st1->getString(0);
-            descriptionM = wxString(value.c_str(), *csConverter);
-        }
+            readBlob(st1, 0, descriptionM, csConverter);
         else
             descriptionM = wxEmptyString;
         availableM = true;

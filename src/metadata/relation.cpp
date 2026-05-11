@@ -143,10 +143,10 @@ void Relation::loadProperties()
         else
             setExternalFilePath(wxEmptyString);
 
-        // for views: source
+        // for views: source — RDB$VIEW_SOURCE is BLOB SUB_TYPE TEXT.
         if (!st1->isNull(3))
         {
-            value = wxString(st1->getString(3).c_str(), *converter);
+            readBlob(st1, 3, value, converter);
             setSource(value);
         }
         else
@@ -244,12 +244,15 @@ void Relation::loadChildren()
         if (!st1->isNull(3))
             collation = std2wxIdentifier(st1->getString(3), converter);
         
-        wxString computedSrc = wxString(st1->getString(4).c_str(), *converter);
+        // RDB$COMPUTED_SOURCE and RDB$DEFAULT_SOURCE are BLOB SUB_TYPE TEXT.
+        wxString computedSrc;
+        if (!st1->isNull(4))
+            readBlob(st1, 4, computedSrc, converter);
         bool hasDefault = !st1->isNull(5);
         wxString defaultSrc;
         if (hasDefault)
         {
-            defaultSrc = wxString(st1->getString(5).c_str(), *converter);
+            readBlob(st1, 5, defaultSrc, converter);
             // Some users reported two spaces before DEFAULT word in source
             // Perhaps some other tools can put garbage here? Should we
             // parse it as SQL to clean up comments, whitespace, etc?

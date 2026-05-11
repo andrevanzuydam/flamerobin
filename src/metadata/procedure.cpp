@@ -112,8 +112,10 @@ void Procedure::loadChildren()
         wxString defaultSrc;
         if (hasDefault)
         {
-            s = st1->getString(3);
-            defaultSrc = std2wxIdentifier(s, converter);
+            // RDB$DEFAULT_SOURCE is BLOB SUB_TYPE TEXT.
+            wxString src;
+            readBlob(st1, 3, src, converter);
+            defaultSrc = src;
         }
         bool notNull = false;
         if (!st1->isNull(4))

@@ -155,8 +155,8 @@ void Function::loadChildren()
         wxString defaultSrc;
         if (hasDefault)
         {
-            s = st1->getString(10);
-            defaultSrc = std2wxIdentifier(s, converter);
+            // RDB$DEFAULT_SOURCE is BLOB SUB_TYPE TEXT.
+            readBlob(st1, 10, defaultSrc, converter);
         }
         bool notNull = false;
         if (!st1->isNull(11))

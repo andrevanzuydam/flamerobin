@@ -36,6 +36,7 @@
 #include "core/ProgressIndicator.h"
 #include "core/StringUtils.h"
 #include "engine/MetadataLoader.h"
+#include "frutils.h"
 #include "metadata/database.h"
 #include "metadata/exception.h"
 #include "metadata/MetadataItemVisitor.h"
@@ -99,8 +100,9 @@ void Exception::loadProperties(fr::IStatementPtr& statement, wxMBConv* converter
 {
     setPropertiesLoaded(false);
 
-    std::string message = statement->getString(1);
-    messageM = wxString(message.c_str(), *converter);
+    // RDB$MESSAGE is a BLOB SUB_TYPE TEXT — read via the BLOB helper so
+    // the fb-cpp backend's strict descriptor check is satisfied.
+    readBlob(statement, 1, messageM, converter);
     numberM = statement->getInt32(2);
     if (statement->isNull(3))
         setDescriptionIsEmpty();

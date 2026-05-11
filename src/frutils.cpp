@@ -33,7 +33,10 @@
 #include <wx/file.h>
 #include <wx/tokenzr.h>
 
+#include <algorithm>
+
 #include "core/StringUtils.h"
+#include "engine/db/IBlob.h"
 #include "engine/db/ibpp/IbppService.h"
 #include "frutils.h"
 #include "gui/ProgressDialog.h"
@@ -71,6 +74,46 @@ void readBlob(fr::IStatementPtr& st, int column, wxString& result,
     result = "";
     if (st->isNull(column))
         return;
+
+    // The fb-cpp backend strictly type-checks getString() against the
+    // descriptor and throws "Invalid type: actual type std::string,
+    // descriptor type 520" for SQL_BLOB columns. IBPP silently converted
+    // them. Read the data via the BLOB API when the column actually is a
+    // BLOB, and fall back to getString() for plain CHAR / VARCHAR
+    // descriptions (some metadata views project descriptions as TEXT).
+    if (st->getColumnType(column) == fr::ColumnType::Blob)
+    {
+        fr::IBlobPtr blob = st->getBlob(column);
+        if (!blob)
+            return;
+        blob->open();
+        const long len = blob->getLength();
+        if (len > 0)
+        {
+            std::string buf;
+            buf.resize(static_cast<size_t>(len));
+            // Read in segments; getMaxSegmentSize() can be 0 for empty
+            // streams or when the engine refuses to report — fall back
+            // to one big read in that case.
+            int segMax = blob->getMaxSegmentSize();
+            if (segMax <= 0)
+                segMax = static_cast<int>(len);
+            size_t offset = 0;
+            while (offset < buf.size())
+            {
+                int want = static_cast<int>(
+                    std::min<size_t>(buf.size() - offset, segMax));
+                int got = blob->read(&buf[offset], want);
+                if (got <= 0)
+                    break;
+                offset += static_cast<size_t>(got);
+            }
+            buf.resize(offset);
+            result = wxString(buf.c_str(), *conv, buf.size());
+        }
+        blob->close();
+        return;
+    }
 
     std::string s = st->getString(column);
     result = wxString(s.c_str(), *conv);
