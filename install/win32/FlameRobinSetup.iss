@@ -100,8 +100,10 @@ Source: ..\..\build32\Debug\flamerobin.exe; DestDir: {app}; Flags: ignoreversion
 #else
 #ifdef X64VERSION
 Source: ..\..\build64\Release\flamerobin.exe; DestDir: {app}; Flags: ignoreversion; Check: Is64BitInstallMode
+Source: ..\..\build64\Release\fbclient.dll; DestDir: {app}; Flags: ignoreversion; Check: Is64BitInstallMode
 #else
 Source: ..\..\build32\Release\flamerobin.exe; DestDir: {app}; Flags: ignoreversion; Check: not Is64BitInstallMode
+Source: ..\..\build32\Release\fbclient.dll; DestDir: {app}; Flags: ignoreversion; Check: not Is64BitInstallMode
 #endif
 #endif
 Source: ..\..\docs\*.*; Excludes: flamerobin.1; DestDir: {app}\docs; Flags: ignoreversion
