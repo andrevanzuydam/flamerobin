@@ -403,11 +403,17 @@ ColumnType FbCppStatement::getColumnType(int index)
     switch (descriptors[index].adjustedType)
     {
         case fbcpp::DescriptorAdjustedType::STRING: return ColumnType::Varchar;
-        case fbcpp::DescriptorAdjustedType::INT32: 
-        case fbcpp::DescriptorAdjustedType::INT16: 
-            return descriptors[index].scale != 0 ? ColumnType::Numeric : ColumnType::Integer;
-        case fbcpp::DescriptorAdjustedType::INT64: 
-            return descriptors[index].scale != 0 ? ColumnType::Numeric : ColumnType::BigInt;
+        // NUMERIC(p,s) and DECIMAL(p,s) are stored as scaled SMALLINT/INT/
+        // BIGINT/INT128. Don't fork the column type on scale != 0 — scale
+        // is queried separately via getColumnScale() and consumed by the
+        // *ColumnDef classes that already handle scaled rendering. Forking
+        // here lands every NUMERIC column in the DataGridRows `default`
+        // arm and renders as the "[...]" placeholder.
+        case fbcpp::DescriptorAdjustedType::INT32:
+        case fbcpp::DescriptorAdjustedType::INT16:
+            return ColumnType::Integer;
+        case fbcpp::DescriptorAdjustedType::INT64:
+            return ColumnType::BigInt;
         case fbcpp::DescriptorAdjustedType::FLOAT: return ColumnType::Float;
         case fbcpp::DescriptorAdjustedType::DOUBLE: return ColumnType::Double;
         case fbcpp::DescriptorAdjustedType::TIME: return ColumnType::Time;
@@ -563,11 +569,13 @@ ColumnType FbCppStatement::getParameterType(int index)
     switch (descriptors[index].adjustedType)
     {
         case fbcpp::DescriptorAdjustedType::STRING: return ColumnType::Varchar;
-        case fbcpp::DescriptorAdjustedType::INT32: 
-        case fbcpp::DescriptorAdjustedType::INT16: 
-            return descriptors[index].scale != 0 ? ColumnType::Numeric : ColumnType::Integer;
-        case fbcpp::DescriptorAdjustedType::INT64: 
-            return descriptors[index].scale != 0 ? ColumnType::Numeric : ColumnType::BigInt;
+        // See getColumnType for the no-fork-on-scale rationale: scale is
+        // metadata, not part of the storage discriminator.
+        case fbcpp::DescriptorAdjustedType::INT32:
+        case fbcpp::DescriptorAdjustedType::INT16:
+            return ColumnType::Integer;
+        case fbcpp::DescriptorAdjustedType::INT64:
+            return ColumnType::BigInt;
         case fbcpp::DescriptorAdjustedType::FLOAT: return ColumnType::Float;
         case fbcpp::DescriptorAdjustedType::DOUBLE: return ColumnType::Double;
         case fbcpp::DescriptorAdjustedType::TIME: return ColumnType::Time;
