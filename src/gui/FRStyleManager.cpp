@@ -287,9 +287,27 @@ void FRStyleManager::assignLexer(wxStyledTextCtrl* text)
 
 void FRStyleManager::assignMargin(wxStyledTextCtrl* text)
 {
+    // Styles are looked up by name from the currently loaded XML; any
+    // (or all) of them may be missing depending on which stylers.xml the
+    // user picked. Every dereference below assumed non-null and a missing
+    // style crashed the ExecuteSqlFrame constructor with an
+    // access-violation that unwound to wxGlobalSEHandler ->
+    // OnFatalException -> ExitProcess (killing the whole app on
+    // right-click -> Execute Statements). Bail early with a diagnostic
+    // instead — the SQL editor still opens; the fold margin just uses
+    // wxWidgets defaults for missing entries.
     FRStyle* styleFold = getGlobalStyler()->getStyleByName("Fold");
     FRStyle* styleFoldMargin = getGlobalStyler()->getStyleByName("Fold margin");
     FRStyle* styleFoldActive = getGlobalStyler()->getStyleByName("Fold active");
+
+    if (!styleFold || !styleFoldMargin || !styleFoldActive)
+    {
+        wxLogWarning("FRStyleManager::assignMargin: fold style(s) missing "
+            "(Fold=%p, Fold margin=%p, Fold active=%p) — leaving fold "
+            "margin at wxWidgets defaults.",
+            styleFold, styleFoldMargin, styleFoldActive);
+        return;
+    }
 
     text->SetProperty(wxT("fold"), wxT("1"));
     text->SetProperty(wxT("fold.comment"), wxT("1"));
