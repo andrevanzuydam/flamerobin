@@ -42,10 +42,22 @@ FbCppStatement::FbCppStatement(IDatabasePtr db, ITransactionPtr tr, fbcpp::Attac
 void FbCppStatement::prepare(const std::string& sql)
 {
     sqlM = sql;
-    statementM.emplace(attachmentM, transactionM, sql);
+
+    // Order matters. `statementM.emplace(...)` destroys the previous
+    // fbcpp::Statement, which calls free() on the underlying Firebird
+    // IStatement — and that invalidates any IResultSet handle derived
+    // from it (Firebird 5+ openCursor path in execute() stores that
+    // handle in resultSetM). If we let the Statement destruct first,
+    // the subsequent resultSetM.reset() would call release() on a
+    // dangling handle and access-violate. Re-preparing a statement
+    // that had fetched from a FB5 cursor (e.g. Logger's SELECT
+    // gen_id... followed by INSERT INTO FLAMEROBIN$LOG) reliably
+    // reproduces the crash. Release our IResultSet ref FIRST, then
+    // replace the Statement.
     resultSetM.reset();
     firstRowFetchedM.reset();
     eofReachedM = false;
+    statementM.emplace(attachmentM, transactionM, sql);
 }
 
 std::string FbCppStatement::getSql() const
