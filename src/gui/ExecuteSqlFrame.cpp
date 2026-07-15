@@ -42,6 +42,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <vector>
 
 #include "config/Config.h"
@@ -1935,34 +1936,47 @@ void ExecuteSqlFrame::OnMenuGridInsertRow(wxCommandEvent& WXUNUSED(event))
 wxArrayInt getSelectedGridRows(DataGrid* grid)
 {
     wxArrayInt rows;
-    if (grid)
-    {
-        // Don't include grid->GetSelectedRows(): on macOS (and some wx versions)
-        // a single-cell click is reported in both GetSelectedRows() and the
-        // selection blocks below, so the row gets counted twice. The blocks
-        // alone correctly cover both row-header clicks and cell selections.
+    if (!grid)
+        return rows;
 
-        // add rows in selection blocks that span all columns
-        wxGridCellCoordsArray tlCells(grid->GetSelectionBlockTopLeft());
-        wxGridCellCoordsArray brCells(grid->GetSelectionBlockBottomRight());
-        wxASSERT(tlCells.GetCount() == brCells.GetCount());
-        for (size_t i = 0; i < tlCells.GetCount(); ++i)
-        {
-            wxGridCellCoords tl = tlCells[i];
-            wxGridCellCoords br = brCells[i];
-            if (tl.GetCol() == 0 && br.GetCol() == grid->GetNumberCols() - 1)
-            {
-                size_t len = br.GetRow() - tl.GetRow() + 1;
-                size_t first = rows.GetCount();
-                rows.SetCount(first + len);
-                for (size_t j = 0; j < len; ++j)
-                    rows[first + j] = tl.GetRow() + j;
-            }
-        }
-        // add the row of the active cell if nothing else is selected
-        if (!rows.GetCount())
-            rows.Add(grid->GetGridCursorRow());
+    // Any selection that touches a row means "the user wants that row".
+    // Historically this function only counted selection blocks that
+    // spanned every column, so shift-clicking or click-dragging over
+    // *cells* (a partial-column block) silently produced no rows and
+    // Delete only deleted the cursor row. Collect from every source
+    // and dedup — that matches user expectation and handles the
+    // macOS "row reported twice" case the old comment guarded against.
+    std::set<int> unique;
+
+    // Full row-label selections.
+    wxArrayInt sr(grid->GetSelectedRows());
+    for (size_t i = 0; i < sr.size(); ++i)
+        unique.insert(sr[i]);
+
+    // Every row in every selection block (regardless of column span).
+    wxGridCellCoordsArray tlCells(grid->GetSelectionBlockTopLeft());
+    wxGridCellCoordsArray brCells(grid->GetSelectionBlockBottomRight());
+    wxASSERT(tlCells.GetCount() == brCells.GetCount());
+    for (size_t i = 0; i < tlCells.GetCount(); ++i)
+    {
+        for (int r = tlCells[i].GetRow(); r <= brCells[i].GetRow(); ++r)
+            unique.insert(r);
     }
+
+    // Individually selected cells (Ctrl+click, or discontiguous
+    // selections that report as loose cells rather than blocks).
+    wxGridCellCoordsArray cells(grid->GetSelectedCells());
+    for (size_t i = 0; i < cells.size(); ++i)
+        unique.insert(cells[i].GetRow());
+
+    // Fall back to the cursor row when nothing else is selected.
+    if (unique.empty())
+        unique.insert(grid->GetGridCursorRow());
+
+    rows.SetCount(unique.size());
+    size_t j = 0;
+    for (int r : unique)
+        rows[j++] = r;
     return rows;
 }
 
