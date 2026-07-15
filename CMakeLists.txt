@@ -785,6 +785,29 @@ add_executable(dal_types_test
 target_link_libraries(dal_types_test IBPP fb-cpp ${wxWidgets_LIBRARIES} ${FR_LIBS})
 add_test(NAME dal_types_test COMMAND dal_types_test)
 
+# Reproduces DataGridRows::removeRows(): SELECT with active cursor, then
+# a fresh DELETE statement in the same transaction. Isolates whether
+# grid-delete crashes are in the DAL vs the wxGrid/UI layer.
+add_executable(grid_delete_repro_test
+    ${SOURCEDIR}/engine/db/fbcpp/GridDeleteReproTest.cpp
+    ${SOURCEDIR}/engine/db/DatabaseFactory.cpp
+    ${SOURCEDIR}/engine/db/ibpp/IbppDatabase.cpp
+    ${SOURCEDIR}/engine/db/ibpp/IbppTransaction.cpp
+    ${SOURCEDIR}/engine/db/ibpp/IbppStatement.cpp
+    ${SOURCEDIR}/engine/db/ibpp/IbppService.cpp
+    ${SOURCEDIR}/engine/db/ibpp/IbppBlob.cpp
+    ${SOURCEDIR}/engine/db/fbcpp/FbCppDatabase.cpp
+    ${SOURCEDIR}/engine/db/fbcpp/FbCppTransaction.cpp
+    ${SOURCEDIR}/engine/db/fbcpp/FbCppStatement.cpp
+    ${SOURCEDIR}/engine/db/fbcpp/FbCppService.cpp
+    ${SOURCEDIR}/engine/db/fbcpp/FbCppBlob.cpp
+    ${SOURCEDIR}/core/FRError.cpp
+    ${SOURCEDIR}/core/FRInt128.cpp
+    ${SOURCEDIR}/core/FRDecimal.cpp
+    ${SOURCEDIR}/core/StringUtils.cpp
+)
+target_link_libraries(grid_delete_repro_test IBPP fb-cpp ${wxWidgets_LIBRARIES} ${FR_LIBS})
+
 # Regression test for issue #78 (EXECUTE BLOCK / Selectable SP emitting
 # internal RDB$xxx domain names instead of actual datatypes).
 # Tests the system-domain classification predicate (name prefix check) that

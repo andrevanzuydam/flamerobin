@@ -331,7 +331,17 @@ void FbCppDatabase::getInfo(DatabaseInfoData* data)
         }
     }
 
-    // Get active transactions
+    // Get active transactions. MON$READ_ONLY / MON$WAIT_MODE are
+    // SMALLINT (0/1) in every current Firebird version, but fb-cpp's
+    // getBool() strictly type-checks against the column descriptor and
+    // throws fbcpp::DatabaseException on anything that isn't BOOLEAN.
+    // Reading MON$READ_ONLY via getBool used to fire a first-chance
+    // throw here on EVERY call to getInfo — and getInfo is called
+    // repeatedly during connect (per-UDF, per-collection). Even though
+    // the catch(...) below absorbs it, the flood of caught exceptions
+    // masks real failures in the dumps and poisons the transaction so
+    // the subsequent tr->commit() can itself throw and propagate.
+    // Use readBoolish so we handle SMALLINT correctly.
     try
     {
         st->prepare("SELECT MON$TRANSACTION_ID, MON$ISOLATION_MODE, MON$READ_ONLY, MON$WAIT_MODE "
@@ -351,12 +361,21 @@ void FbCppDatabase::getInfo(DatabaseInfoData* data)
                 case 4: info.isolationLevel = TransactionIsolationLevel::ReadConsistency; break;
                 default: info.isolationLevel = TransactionIsolationLevel::Concurrency; break;
             }
-            info.readOnly = st->getBool(2);
+            info.readOnly = fr::readBoolish(*st, 2);
             info.wait = (st->getInt32(3) != 0);
             data->activeTransactions.push_back(info);
         }
     }
-    catch (...) {}
+    catch (...)
+    {
+        // Any residual failure — bad server permissions on MON$,
+        // FB 2.x without MON$TRANSACTIONS, etc. — poisons the
+        // transaction. Roll back instead of committing so the
+        // failure doesn't propagate through the trailing commit
+        // and crash the whole connect flow.
+        try { tr->rollback(); } catch (...) {}
+        return;
+    }
 
     tr->commit();
 }
