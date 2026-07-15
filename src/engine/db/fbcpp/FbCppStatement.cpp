@@ -260,14 +260,27 @@ int32_t FbCppStatement::getInt32(int index)
 {
     if (!statementM)
         throw std::runtime_error("No statement available");
-    return statementM->get<std::optional<std::int32_t>>((unsigned)index).value_or(0);
+    // Use ScaledInt32 (unscaled storage + scale) rather than plain int32
+    // so scaled NUMERIC(p,s) columns come back as their raw stored
+    // integer, matching IBPP::Get(index, int32_t&) semantics. The
+    // DataGrid's IntegerColumnDef applies the scale itself; if we let
+    // fb-cpp's getInt32 normalise to scale-0 (e.g. NUMERIC(5,2) value
+    // 3.00 -> raw 300 -> normalised 3), DataGrid then divides by 100
+    // again and displays 0.03 instead of 3.00.
+    auto v = statementM->get<std::optional<fbcpp::ScaledInt32>>((unsigned)index);
+    return v.has_value() ? v->value : 0;
 }
 
 int64_t FbCppStatement::getInt64(int index)
 {
     if (!statementM)
         throw std::runtime_error("No statement available");
-    return statementM->get<std::optional<std::int64_t>>((unsigned)index).value_or(0);
+    // See getInt32 for rationale: return the raw stored integer of a
+    // scaled NUMERIC/DECIMAL column, not the fb-cpp scale-normalised
+    // value, so DataGrid's Int64ColumnDef applies the scale exactly
+    // once.
+    auto v = statementM->get<std::optional<fbcpp::ScaledInt64>>((unsigned)index);
+    return v.has_value() ? v->value : 0;
 }
 
 double FbCppStatement::getDouble(int index)
