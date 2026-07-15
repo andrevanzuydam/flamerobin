@@ -1191,7 +1191,15 @@ void DataGrid::setupStyles()
     SetBackgroundColour(stylerManager().getDefaultStyle()->getbgColor());
     SetForegroundColour(stylerManager().getDefaultStyle()->getfgColor());
 
-    SetSelectionBackground(stylerManager().getStyleByName("Selected text colour")->getbgColor());
+    // Grid selection background. The stock "Selected text colour" style
+    // in the default stylers.xml is a very pale gray that's nearly
+    // invisible against the white grid background in light mode, so
+    // users can't tell what they've selected before pressing Delete
+    // row(s). Override with a soft light yellow — high enough contrast
+    // on a white background, still readable on dark themes. If the
+    // active stylers.xml doesn't define the style at all, don't
+    // dereference nullptr (see FRStyleManager::assignMargin fix).
+    SetSelectionBackground(wxColour(255, 245, 157));
     //SetSelectionForeground(stylerManager().getDefaultStyle()->getfgColor());
 
 
