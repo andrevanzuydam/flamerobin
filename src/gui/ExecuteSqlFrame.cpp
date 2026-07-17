@@ -571,7 +571,20 @@ ExecuteSqlFrame::ExecuteSqlFrame(wxWindow* WXUNUSED(parent), int id,
     if (db->getIsVolative())
         prepareVolatileDatabase();
 
-    transactionIsolationLevelM = static_cast<fr::TransactionIsolationLevel>(config().get("transactionIsolationLevel", 0));
+    // Default isolation used to be enum-index 0 = Consistency, which in
+    // Firebird is isc_tpb_consistency (TABLE STABILITY) — the transaction
+    // holds a shared table-level lock on every table it touches for its
+    // entire lifetime. In a GUI tool that keeps the SQL editor's
+    // transaction open until the user hits Commit / Rollback, this
+    // blocks every other service trying to update the same tables.
+    // Users reported "other services need to wait until FlameRobin
+    // frees up the connection". Concurrency (SNAPSHOT) is the safe
+    // default: same isolation guarantees for the reader, no writer
+    // blocking, no shared table locks. Users who explicitly set
+    // Consistency in Preferences still get it — the value only
+    // changes for configs that didn't have this key set (upgrade
+    // path is: FlameRobin re-saves it as 1 on next Preferences save).
+    transactionIsolationLevelM = static_cast<fr::TransactionIsolationLevel>(config().get("transactionIsolationLevel", static_cast<int>(fr::TransactionIsolationLevel::Concurrency)));
     transactionLockResolutionM = config().get("transactionLockResolution", true) ? fr::TransactionLockResolution::Wait : fr::TransactionLockResolution::NoWait;
     transactionAccessModeM = config().get("transactionAccessMode", false) ? fr::TransactionAccessMode::Read : fr::TransactionAccessMode::Write;
     showStatisticsM = config().get("SQLEditorShowStats", true);
